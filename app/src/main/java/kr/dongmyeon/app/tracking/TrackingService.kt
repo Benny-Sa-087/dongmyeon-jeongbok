@@ -165,7 +165,7 @@ class TrackingService : LifecycleService() {
         )
         return NotificationCompat.Builder(this, DongApp.CH_TRACKING)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle("동면 정복 · 위치 기록 중")
+            .setContentTitle("Benny Outbound · 위치 기록 중")
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
