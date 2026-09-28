@@ -3,7 +3,7 @@
 전국 읍·면·동 방문을 기록하는 안드로이드 앱입니다. 걷기든 차로 지나가기든 방문으로 인정하고, 달성한 지역을 지도에 색칠합니다.
 모든 데이터는 기기 안(Room/SQLite)에만 저장하며 서버가 없습니다.
 
-**현재: 1단계, 인천광역시 158개 읍면동**
+**현재: 2단계, 전국 16개 시도 3,558개 읍면동**
 
 ## 구성
 
@@ -104,4 +104,6 @@ MapLibre와 [OpenFreeMap](https://openfreemap.org) 배경지도를 씁니다. **
 
 - 읍면동 경계: 통계청 SGIS 행정동 경계(공공누리 제1유형)를 가공한 [vuski/admdongkor](https://github.com/vuski/admdongkor) (CC BY 4.0), `ver20260701`
   - mapshaper로 10m 간격 단순화, 좌표 소수점 5자리
+  - 전국 3,558개(세종 24, 제주 43 등 소규모 시·도 포함), 파일 크기 약 10.9MB
+  - `./data-tools/build_regions.sh` (인자 없이 실행하면 전국, 시·도명을 넣으면 그 지역만)
 - 배경지도: OpenFreeMap, © OpenStreetMap contributors

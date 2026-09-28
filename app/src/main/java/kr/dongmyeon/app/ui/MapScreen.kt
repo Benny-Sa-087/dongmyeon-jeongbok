@@ -65,9 +65,10 @@ private const val SRC = "regions"
 private const val FILL = "regions-fill"
 private const val LINE = "regions-line"
 
+// 전국 데이터(2단계)로 확장하면서 초기 화면도 전국이 한눈에 보이게 조정
 private val START_CAMERA = CameraPosition.Builder()
-    .target(LatLng(37.456, 126.63))
-    .zoom(9.3)
+    .target(LatLng(36.2, 127.9))
+    .zoom(6.4)
     .build()
 
 /** 지도 한 개와 그 상태를 붙잡아 두는 holder */
