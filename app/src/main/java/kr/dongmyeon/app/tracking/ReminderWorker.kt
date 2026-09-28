@@ -42,8 +42,14 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 nearest.joinToString(" · ") { region -> "${region.shortName}(${distanceLabel(fix, region)})" }
             }
         }
-        notify(ctx, text)
+        notify(ctx, "$text\n\n출발 전 점검: ${maintenanceTip()}")
         return Result.success()
+    }
+
+    /** 오버랜딩 세팅 특유의 점검 항목을 매주 하나씩 돌아가며 안내(주 단위로 바뀜) */
+    private fun maintenanceTip(): String {
+        val week = (System.currentTimeMillis() / 604_800_000L).toInt()
+        return MAINTENANCE_TIPS[Math.floorMod(week, MAINTENANCE_TIPS.size)]
     }
 
     private fun distanceLabel(fix: kr.dongmyeon.core.Fix, region: Region): String {
@@ -80,5 +86,12 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     companion object {
         private const val REMINDER_NOTIF_ID = 100
+        private val MAINTENANCE_TIPS = listOf(
+            "타이어 공기압",
+            "보조(서브) 배터리 전압",
+            "냉장고·인버터 작동 확인",
+            "워셔액·엔진오일 게이지",
+            "루프탑 텐트·짐 고정 상태",
+        )
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -37,6 +38,7 @@ private data class Tab(val label: String, val icon: ImageVector)
 private val TABS = listOf(
     Tab("지도", Icons.Filled.Map),
     Tab("기록", Icons.AutoMirrored.Filled.List),
+    Tab("차량", Icons.Filled.DirectionsCar),
     Tab("설정", Icons.Filled.Settings),
 )
 
@@ -58,6 +60,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2E7D32))) {
                 val achieved by repo.achieved.collectAsStateWithLifecycle(initialValue = emptyList())
+                val needsReview by repo.needsReview.collectAsStateWithLifecycle(initialValue = emptyList())
+                val trips by repo.trips.collectAsStateWithLifecycle(initialValue = emptyList())
                 val live by repo.live.collectAsStateWithLifecycle()
                 val running by TrackingService.isRunning.collectAsStateWithLifecycle()
                 val offlineMode by prefs.offlineMode.collectAsStateWithLifecycle()
@@ -81,8 +85,9 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         when (tab) {
-                            0 -> MapScreen(achieved, total, offlineMode)
-                            1 -> RecordsScreen(achieved)
+                            0 -> MapScreen(repo, achieved, total, offlineMode)
+                            1 -> RecordsScreen(repo, achieved, needsReview)
+                            2 -> VehicleScreen(trips, needsReview.size)
                             else -> SettingsScreen(repo, running, live, prefs, offlineMode, reminder)
                         }
                     }

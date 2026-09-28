@@ -22,7 +22,7 @@ data class AchievedEntity(
     val sido: String,
     val sgg: String,
     val firstVisitedAt: Long,
-    /** "POINTS" | "CROSSING" */
+    /** "POINTS" | "CROSSING" | "ON_SITE" */
     val method: String,
 )
 
@@ -46,6 +46,34 @@ data class LastPointEntity(
     val enteredFromOutside: Boolean,
 )
 
+/** 터널 등 공백 구간 때문에 자동 확정하지 않고 사용자 확인을 기다리는 지역 */
+@Entity(tableName = "needs_review")
+data class NeedsReviewEntity(
+    @PrimaryKey val code: String,
+    val name: String,
+    val sido: String,
+    val sgg: String,
+    val flaggedAt: Long,
+)
+
+/**
+ * 기록 시작~정지 한 구간(여행/출퇴근 등). "차량 가동률"이 아니라
+ * "평소 출퇴근 패턴에서 벗어난 주행(=진짜 여행)"을 가리는 데 쓴다.
+ */
+@Entity(tableName = "trips")
+data class TripEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startTime: Long,
+    val endTime: Long,
+    val distanceMeters: Double,
+    /** 이 구간에서 새로 달성한 읍면동 수(0이면 늘 다니던 길일 가능성이 높음) */
+    val newRegionCount: Int,
+    /** 요일(Calendar.SUNDAY=1 ~ SATURDAY=7) */
+    val dayOfWeek: Int,
+    /** 출퇴근성 판정 결과. null=판정 보류(기준 데이터 부족) */
+    val isRoutine: Boolean?,
+)
+
 @Dao
 abstract class VisitDao {
     @Query("SELECT * FROM achieved ORDER BY firstVisitedAt DESC")
@@ -62,6 +90,9 @@ abstract class VisitDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertAchieved(items: List<AchievedEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun insertAchievedOne(item: AchievedEntity)
 
     @Upsert
     abstract suspend fun upsertHits(items: List<HitEntity>)
@@ -81,28 +112,68 @@ abstract class VisitDao {
     @Query("DELETE FROM hits")
     abstract suspend fun clearHits()
 
+    @Query("SELECT * FROM needs_review ORDER BY flaggedAt DESC")
+    abstract fun observeNeedsReview(): Flow<List<NeedsReviewEntity>>
+
+    @Query("SELECT * FROM needs_review")
+    abstract suspend fun allNeedsReview(): List<NeedsReviewEntity>
+
+    @Upsert
+    abstract suspend fun upsertNeedsReview(items: List<NeedsReviewEntity>)
+
+    @Query("DELETE FROM needs_review WHERE code IN (:codes)")
+    abstract suspend fun deleteNeedsReview(codes: List<String>)
+
+    @Query("DELETE FROM needs_review")
+    abstract suspend fun clearNeedsReview()
+
+    @Insert
+    abstract suspend fun insertTrip(trip: TripEntity): Long
+
+    @Query("SELECT * FROM trips ORDER BY startTime DESC LIMIT :limit")
+    abstract suspend fun recentTrips(limit: Int): List<TripEntity>
+
+    @Query("SELECT * FROM trips ORDER BY startTime DESC")
+    abstract fun observeTrips(): Flow<List<TripEntity>>
+
+    @Query("DELETE FROM trips")
+    abstract suspend fun clearTrips()
+
     @Transaction
     open suspend fun saveStep(
         newAchieved: List<AchievedEntity>,
         hits: List<HitEntity>,
         removedHits: List<String>,
+        needsReview: List<NeedsReviewEntity>,
+        resolvedReview: List<String>,
         last: LastPointEntity?,
     ) {
         if (newAchieved.isNotEmpty()) insertAchieved(newAchieved)
         if (removedHits.isNotEmpty()) deleteHits(removedHits)
         if (hits.isNotEmpty()) upsertHits(hits)
+        if (needsReview.isNotEmpty()) upsertNeedsReview(needsReview)
+        if (resolvedReview.isNotEmpty()) deleteNeedsReview(resolvedReview)
         if (last != null) upsertLastPoint(last) else clearLastPoint()
     }
 
     @Transaction
+    open suspend fun confirmReview(achieved: AchievedEntity) {
+        insertAchievedOne(achieved)
+        deleteNeedsReview(listOf(achieved.code))
+    }
+
+    @Transaction
     open suspend fun clearAll() {
-        clearAchieved(); clearHits(); clearLastPoint()
+        clearAchieved(); clearHits(); clearLastPoint(); clearNeedsReview(); clearTrips()
     }
 }
 
 @Database(
-    entities = [AchievedEntity::class, HitEntity::class, LastPointEntity::class],
-    version = 1,
+    entities = [
+        AchievedEntity::class, HitEntity::class, LastPointEntity::class,
+        NeedsReviewEntity::class, TripEntity::class,
+    ],
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -110,6 +181,10 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "dongmyeon.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "dongmyeon.db")
+                // 아직 초기 개발 단계라 스키마가 바뀌면 로컬 DB를 새로 만든다.
+                // (달성 기록은 설정 탭의 JSON 백업/복원으로 보존 예정 — 3단계)
+                .fallbackToDestructiveMigration()
+                .build()
     }
 }

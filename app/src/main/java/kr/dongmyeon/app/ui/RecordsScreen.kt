@@ -1,20 +1,30 @@
 package kr.dongmyeon.app.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import kr.dongmyeon.app.data.AchievedEntity
+import kr.dongmyeon.app.data.NeedsReviewEntity
+import kr.dongmyeon.app.data.VisitRepository
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -27,19 +37,53 @@ fun formatDateTime(millis: Long): String =
 fun methodLabel(method: String) = when (method) {
     "POINTS" -> "머무름"
     "CROSSING" -> "통과"
+    "ON_SITE" -> "직접 방문"
     else -> method
 }
 
-/** 최근 달성 지역 목록(최신순) */
+/** 최근 달성 지역 목록(최신순) + 확인 필요 지역 */
 @Composable
-fun RecordsScreen(achieved: List<AchievedEntity>) {
-    if (achieved.isEmpty()) {
+fun RecordsScreen(repo: VisitRepository, achieved: List<AchievedEntity>, needsReview: List<NeedsReviewEntity>) {
+    val scope = rememberCoroutineScope()
+
+    if (achieved.isEmpty() && needsReview.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Text("아직 달성한 지역이 없습니다.\n설정 탭에서 기록을 시작하세요.", style = MaterialTheme.typography.bodyLarge)
         }
         return
     }
+
     LazyColumn(Modifier.fillMaxSize()) {
+        if (needsReview.isNotEmpty()) {
+            item {
+                Text(
+                    "확인 필요 ${needsReview.size}곳",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+                )
+                Text(
+                    "GPS가 잠깐 끊긴 구간이라 자동으로 인정하지 않았습니다. 실제로 지나갔다면 확정해주세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            items(needsReview, key = { "review-" + it.code }) { r ->
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(r.name.substringAfter(' '), style = MaterialTheme.typography.titleSmall)
+                        Text(formatDateTime(r.flaggedAt), style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { scope.launch { repo.dismissReview(r.code) } }) { Text("무시") }
+                            TextButton(onClick = { scope.launch { repo.confirmReview(r.code) } }) { Text("실제 방문 맞음") }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Text(
                 "달성 ${achieved.size}곳",

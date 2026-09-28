@@ -27,6 +27,7 @@ import kr.dongmyeon.app.DongApp
 import kr.dongmyeon.app.R
 import kr.dongmyeon.app.ui.MainActivity
 import kr.dongmyeon.core.Fix
+import kr.dongmyeon.core.Method
 
 /**
  * 위치 기록 포그라운드 서비스.
@@ -67,7 +68,9 @@ class TrackingService : LifecycleService() {
         lifecycleScope.launch {
             for (fix in fixes) {
                 val found = repo.onFix(fix)
-                found.forEach { notifyAchieved(it.name) }
+                found.forEach {
+                    if (it.method == Method.NEEDS_REVIEW) notifyNeedsReview(it.name) else notifyAchieved(it.name)
+                }
                 updateNotification()
             }
         }
@@ -96,9 +99,13 @@ class TrackingService : LifecycleService() {
 
         val fresh = intent?.action == ACTION_START
         lifecycleScope.launch {
-            // 사용자가 새로 시작한 경우에만 이전 기록의 마지막 점과 끊는다.
-            // (시스템이 서비스를 재시작한 경우엔 이어서 기록)
-            if (fresh && !updatesRequested) DongApp.repo(this@TrackingService).breakTrack()
+            // 사용자가 새로 시작한 경우에만 이전 기록의 마지막 점과 끊고 새 "여행" 구간을 연다.
+            // (시스템이 서비스를 재시작한 경우엔 이어서 기록·이어서 같은 구간으로 침)
+            if (fresh && !updatesRequested) {
+                val repo = DongApp.repo(this@TrackingService)
+                repo.breakTrack()
+                repo.startSession()
+            }
             requestUpdates()
         }
         return START_STICKY
@@ -128,6 +135,8 @@ class TrackingService : LifecycleService() {
         // 사용자가 직접 정지한 경우에만 감시를 끈다. 시스템이 서비스를 강제 종료한 경우엔
         // stopTracking() 을 안 거치므로(onDestroy 만 호출됨) 감시가 계속 남아 복구해준다.
         WatchdogWorker.cancel(this)
+        val repo = DongApp.repo(this)
+        lifecycleScope.launch { repo.endSession() }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -175,6 +184,17 @@ class TrackingService : LifecycleService() {
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("새 지역 달성!")
             .setContentText(name)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent())
+            .build()
+        getSystemService(NotificationManager::class.java).notify(name.hashCode(), n)
+    }
+
+    private fun notifyNeedsReview(name: String) {
+        val n = NotificationCompat.Builder(this, DongApp.CH_ACHIEVED)
+            .setSmallIcon(R.drawable.ic_notify)
+            .setContentTitle("확인이 필요해요")
+            .setContentText("$name · GPS가 잠깐 끊긴 구간이라 기록 탭에서 확인해주세요")
             .setAutoCancel(true)
             .setContentIntent(contentIntent())
             .build()

@@ -27,12 +27,14 @@ class IncheonDataTest {
     }
 
     @Test
-    fun `시청에서 송도까지 한 번에 이으면 사이 동네들이 가로지르기로 달성`() {
+    fun `시청에서 송도까지 한 번에 이으면 실거리가 커서 확인 필요로만 표시`() {
+        // 약 13km를 10분 만에 잇는 단일 구간이라 정상 주행 간격(기본 2km 3분 기준)을 넘어서고,
+        // 이건 정확히 터널·신호끊김 오탐을 막기 위한 공백-구간 안전장치가 걸려야 하는 상황이다.
         val j = VisitJudge(index)
         j.process(Fix(37.4563, 126.7052, 5f, 0))
         val got = j.process(Fix(37.3925, 126.6390, 5f, 600_000))
         assertTrue(got.size >= 3, "중간 동네 여러 개: ${got.map { it.name }}")
-        assertTrue(got.all { it.method == Method.CROSSING })
+        assertTrue(got.all { it.method == Method.NEEDS_REVIEW })
         assertTrue(got.none { it.name.endsWith("구월1동") || it.name.endsWith("송도2동") })
     }
 }

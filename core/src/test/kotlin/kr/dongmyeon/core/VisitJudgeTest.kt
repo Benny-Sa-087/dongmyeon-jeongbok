@@ -22,7 +22,13 @@ class VisitJudgeTest {
     private val ring = Region("RG", "테스트시 테스트구 고리동", "테스트시", "테스트구",
         listOf(Polygon(square(127.10, 37.00, 127.13, 37.03), listOf(square(127.11, 37.01, 127.12, 37.02)))))
 
-    private fun judge() = VisitJudge(RegionIndex(listOf(sq, right, ring)))
+    // 이 테스트들은 기하 판정 자체(영역 안 점 개수, 가로지르기)를 확인하는 게 목적이라
+    // 공백-구간 확인 필요 로직(별도 테스트 클래스에서 검증)은 끄고 순수 지오메트리만 본다.
+    private fun judge() = VisitJudge(
+        RegionIndex(listOf(sq, right, ring)),
+        maxGapMeters = Double.MAX_VALUE,
+        maxGapMillis = Long.MAX_VALUE,
+    )
     private fun fix(lat: Double, lng: Double, acc: Float? = 10f, t: Long = 0) = Fix(lat, lng, acc, t)
 
     // ---- 1. 영역 안 점 2개 ----

@@ -15,12 +15,14 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.launch
 import kr.dongmyeon.app.data.AchievedEntity
 import kr.dongmyeon.app.data.VisitRepository
 import kr.dongmyeon.app.tracking.Permissions
@@ -76,8 +79,9 @@ private class MapHolder(val view: MapView) {
 }
 
 @Composable
-fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?, offlineMode: Boolean) {
+fun MapScreen(repo: VisitRepository, achieved: List<AchievedEntity>, totalRegions: Int?, offlineMode: Boolean) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var selected by remember { mutableStateOf<String?>(null) }
     var styleReady by remember { mutableStateOf(0) }
@@ -180,6 +184,11 @@ fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?, offlineMode: B
                         if (a != null) "달성 · ${formatDateTime(a.firstVisitedAt)} · ${methodLabel(a.method)}" else "미달성",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    if (a == null) {
+                        TextButton(onClick = { scope.launch { repo.markOnSite(code) } }) {
+                            Text("여기 직접 방문으로 기록")
+                        }
+                    }
                 }
             }
         }
