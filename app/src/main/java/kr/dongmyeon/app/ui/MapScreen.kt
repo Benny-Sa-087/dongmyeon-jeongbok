@@ -2,7 +2,6 @@ package kr.dongmyeon.app.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,8 +58,15 @@ private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 private const val OFFLINE_STYLE = """{"version":8,"sources":{},"layers":[
   {"id":"bg","type":"background","paint":{"background-color":"#DDE6EE"}}]}"""
 
-private const val ACHIEVED_COLOR = "#E4572E"
-private const val PENDING_COLOR = "#9E9E9E"
+// 달성/미달성 색 대비를 확실히 하기 위해 색상뿐 아니라 채움 정도(불투명도)와 테두리도 다르게 준다.
+// 달성: 진한 초록 + 진한 초록 테두리 + 높은 불투명도(뚜렷하게 보임)
+// 미달성: 옅은 청회색 + 낮은 불투명도(배경지도를 가리지 않으면서 "아직"임을 드러냄)
+private const val ACHIEVED_COLOR = "#00A651"
+private const val ACHIEVED_LINE_COLOR = "#00723A"
+private const val PENDING_COLOR = "#B0BEC5"
+private const val PENDING_LINE_COLOR = "#78909C"
+private const val ACHIEVED_FILL_OPACITY = 0.62f
+private const val PENDING_FILL_OPACITY = 0.28f
 private const val SRC = "regions"
 private const val FILL = "regions-fill"
 private const val LINE = "regions-line"
@@ -143,9 +149,18 @@ fun MapScreen(repo: VisitRepository, achieved: List<AchievedEntity>, totalRegion
         }
     }
 
-    // 달성 목록이 바뀌거나 스타일이 새로 로드되면 색칠 갱신
+    // 달성 목록이 바뀌거나 스타일이 새로 로드되면 색칠 갱신.
+    // 색상뿐 아니라 불투명도·테두리 굵기까지 같이 바꿔서 달성/미달성이 한눈에 갈리게 한다.
     LaunchedEffect(codes, styleReady) {
-        holder.style?.getLayerAs<FillLayer>(FILL)?.setProperties(PropertyFactory.fillColor(fillExpression(codes)))
+        val style = holder.style ?: return@LaunchedEffect
+        style.getLayerAs<FillLayer>(FILL)?.setProperties(
+            PropertyFactory.fillColor(matchExpr(codes, "\"$ACHIEVED_COLOR\"", "\"$PENDING_COLOR\"")),
+            PropertyFactory.fillOpacity(matchExpr(codes, "$ACHIEVED_FILL_OPACITY", "$PENDING_FILL_OPACITY")),
+        )
+        style.getLayerAs<LineLayer>(LINE)?.setProperties(
+            PropertyFactory.lineColor(matchExpr(codes, "\"$ACHIEVED_LINE_COLOR\"", "\"$PENDING_LINE_COLOR\"")),
+            PropertyFactory.lineWidth(matchExpr(codes, "1.4", "0.6")),
+        )
     }
 
     // 현재 위치 표시(권한이 있을 때)
@@ -209,28 +224,29 @@ private fun addRegionLayers(style: Style) {
         style.addLayer(
             FillLayer(FILL, SRC).withProperties(
                 PropertyFactory.fillColor(PENDING_COLOR),
-                PropertyFactory.fillOpacity(0.5f),
+                PropertyFactory.fillOpacity(PENDING_FILL_OPACITY),
             )
         )
     }
     if (style.getLayer(LINE) == null) {
         style.addLayer(
             LineLayer(LINE, SRC).withProperties(
-                PropertyFactory.lineColor("#555555"),
-                PropertyFactory.lineWidth(0.7f),
-                PropertyFactory.lineOpacity(0.7f),
+                PropertyFactory.lineColor(PENDING_LINE_COLOR),
+                PropertyFactory.lineWidth(0.6f),
+                PropertyFactory.lineOpacity(0.8f),
             )
         )
     }
 }
 
-/** 달성 코드 → 주황, 나머지 → 회색 */
-private fun fillExpression(codes: List<String>): Expression {
-    if (codes.isEmpty()) return Expression.color(Color.parseColor(PENDING_COLOR))
+/**
+ * 달성 코드 목록에 따라 값을 둘로 나누는 MapLibre match 표현식을 만든다.
+ * [achievedLiteral]/[pendingLiteral] 은 JSON 리터럴 그대로("\"#000\"" 또는 "0.5" 같은 문자열).
+ */
+private fun matchExpr(codes: List<String>, achievedLiteral: String, pendingLiteral: String): Expression {
+    if (codes.isEmpty()) return Expression.Converter.convert(pendingLiteral)
     val labels = codes.joinToString(",") { "\"$it\"" }
-    return Expression.Converter.convert(
-        """["match",["get","code"],[$labels],"$ACHIEVED_COLOR","$PENDING_COLOR"]"""
-    )
+    return Expression.Converter.convert("""["match",["get","code"],[$labels],$achievedLiteral,$pendingLiteral]""")
 }
 
 private fun findName(map: MapLibreMap, code: String): String? {
