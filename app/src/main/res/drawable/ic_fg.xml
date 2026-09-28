@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 지도 핀 모양 전경 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,28c-10.5,0 -19,8.5 -19,19c0,14.2 19,33 19,33s19,-18.8 19,-33c0,-10.5 -8.5,-19 -19,-19zM54,54a7,7 0,1 1,0 -14a7,7 0,1 1,0 14z" />
+</vector>
