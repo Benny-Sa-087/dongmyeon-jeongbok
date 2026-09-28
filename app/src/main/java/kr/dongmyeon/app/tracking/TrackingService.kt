@@ -92,6 +92,7 @@ class TrackingService : LifecycleService() {
         )
         setRecordingPref(this, true)
         _running.value = true
+        WatchdogWorker.schedule(this)
 
         val fresh = intent?.action == ACTION_START
         lifecycleScope.launch {
@@ -124,6 +125,9 @@ class TrackingService : LifecycleService() {
         updatesRequested = false
         setRecordingPref(this, false)
         _running.value = false
+        // 사용자가 직접 정지한 경우에만 감시를 끈다. 시스템이 서비스를 강제 종료한 경우엔
+        // stopTracking() 을 안 거치므로(onDestroy 만 호출됨) 감시가 계속 남아 복구해준다.
+        WatchdogWorker.cancel(this)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

@@ -108,7 +108,8 @@ fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus, pr
                 }, modifier = Modifier.fillMaxWidth()) { Text("기록 시작") }
             }
             Text(
-                "100m 이상 이동할 때만 위치를 받아 배터리를 아낍니다. 기록 중에는 상단에 알림이 표시됩니다.",
+                "100m 이상 이동할 때만 위치를 받아 배터리를 아낍니다. 기록 중에는 상단에 알림이 표시됩니다.\n" +
+                    "재부팅되거나 시스템이 기록을 강제 종료해도 최대 15분 안에 자동으로 다시 켜집니다.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

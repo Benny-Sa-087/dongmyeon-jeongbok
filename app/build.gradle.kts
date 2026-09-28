@@ -71,6 +71,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("org.maplibre.gl:android-sdk:11.8.0")
 }
