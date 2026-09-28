@@ -5,17 +5,21 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import kr.dongmyeon.app.data.AppDatabase
+import kr.dongmyeon.app.data.AppPrefs
 import kr.dongmyeon.app.data.VisitRepository
 import org.maplibre.android.MapLibre
 
 class DongApp : Application() {
     lateinit var repo: VisitRepository
         private set
+    lateinit var prefs: AppPrefs
+        private set
 
     override fun onCreate() {
         super.onCreate()
         MapLibre.getInstance(this)
         repo = VisitRepository(this, AppDatabase.create(this))
+        prefs = AppPrefs(this)
         createChannels()
     }
 
@@ -36,5 +40,6 @@ class DongApp : Application() {
         const val CH_ACHIEVED = "achieved"
 
         fun repo(context: Context) = (context.applicationContext as DongApp).repo
+        fun prefs(context: Context) = (context.applicationContext as DongApp).prefs
     }
 }

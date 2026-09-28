@@ -25,6 +25,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,13 +42,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.launch
+import kr.dongmyeon.app.data.AppPrefs
 import kr.dongmyeon.app.data.LiveStatus
 import kr.dongmyeon.app.data.VisitRepository
 import kr.dongmyeon.app.tracking.Permissions
 import kr.dongmyeon.app.tracking.TrackingService
 
 @Composable
-fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus) {
+fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus, prefs: AppPrefs, offlineMode: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 설정 화면에서 돌아올 때마다 권한 상태 새로 읽기
@@ -147,6 +149,21 @@ fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus) {
                 Text("현재 지역: ${live.currentRegionName ?: "-"}", style = MaterialTheme.typography.bodySmall)
             } else {
                 Text("아직 받은 위치가 없습니다.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
+        Section("지도") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("오프라인 모드")
+                    Text(
+                        "켜면 배경지도를 아예 요청하지 않습니다(회색 배경 + 경계·색칠만 표시). " +
+                            "지도를 볼 때 대략적 위치가 지도 서버로 나가는 것을 막고 싶을 때 켜세요. " +
+                            "달성 판정은 이 설정과 무관하게 항상 기기 안에서만 이루어집니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = offlineMode, onCheckedChange = { prefs.setOfflineMode(it) })
             }
         }
 

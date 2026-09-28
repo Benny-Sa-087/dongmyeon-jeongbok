@@ -52,11 +52,13 @@ class MainActivity : ComponentActivity() {
         }
 
         val repo = DongApp.repo(this)
+        val prefs = DongApp.prefs(this)
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2E7D32))) {
                 val achieved by repo.achieved.collectAsStateWithLifecycle(initialValue = emptyList())
                 val live by repo.live.collectAsStateWithLifecycle()
                 val running by TrackingService.isRunning.collectAsStateWithLifecycle()
+                val offlineMode by prefs.offlineMode.collectAsStateWithLifecycle()
                 val total by produceState<Int?>(null) { value = repo.regions().regions.size }
                 var tab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -76,9 +78,9 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         when (tab) {
-                            0 -> MapScreen(achieved, total)
+                            0 -> MapScreen(achieved, total, offlineMode)
                             1 -> RecordsScreen(achieved)
-                            else -> SettingsScreen(repo, running, live)
+                            else -> SettingsScreen(repo, running, live, prefs, offlineMode)
                         }
                     }
                 }

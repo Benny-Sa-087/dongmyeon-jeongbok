@@ -72,10 +72,11 @@ private class MapHolder(val view: MapView) {
     var map: MapLibreMap? = null
     var style: Style? = null
     var usedFallback = false
+    var clickListenerAdded = false
 }
 
 @Composable
-fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?) {
+fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?, offlineMode: Boolean) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var selected by remember { mutableStateOf<String?>(null) }
@@ -106,28 +107,34 @@ fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?) {
         }
     }
 
-    LaunchedEffect(holder) {
+    // holder(최초 1회) + offlineMode(설정을 바꿀 때마다) 에 반응해 스타일을 다시 적용한다.
+    // 오프라인 모드일 때는 배경 타일을 아예 요청하지 않는다(위치 노출 방지).
+    LaunchedEffect(holder, offlineMode) {
         holder.view.getMapAsync { map ->
             holder.map = map
-            map.cameraPosition = START_CAMERA
-            map.uiSettings.isRotateGesturesEnabled = false
             val onLoaded = Style.OnStyleLoaded { style ->
                 holder.style = style
                 addRegionLayers(style)
                 styleReady++
             }
-            holder.view.addOnDidFailLoadingMapListener {
-                if (!holder.usedFallback) {
-                    holder.usedFallback = true
-                    map.setStyle(Style.Builder().fromJson(OFFLINE_STYLE), onLoaded)
+            if (!holder.clickListenerAdded) {
+                holder.clickListenerAdded = true
+                map.cameraPosition = START_CAMERA
+                map.uiSettings.isRotateGesturesEnabled = false
+                map.addOnMapClickListener { point ->
+                    val features = map.queryRenderedFeatures(map.projection.toScreenLocation(point), FILL)
+                    selected = features.firstOrNull()?.getStringProperty("code")
+                    true
+                }
+                holder.view.addOnDidFailLoadingMapListener {
+                    if (!holder.usedFallback) {
+                        holder.usedFallback = true
+                        map.setStyle(Style.Builder().fromJson(OFFLINE_STYLE), onLoaded)
+                    }
                 }
             }
-            map.setStyle(Style.Builder().fromUri(STYLE_URL), onLoaded)
-            map.addOnMapClickListener { point ->
-                val features = map.queryRenderedFeatures(map.projection.toScreenLocation(point), FILL)
-                selected = features.firstOrNull()?.getStringProperty("code")
-                true
-            }
+            val builder = if (offlineMode) Style.Builder().fromJson(OFFLINE_STYLE) else Style.Builder().fromUri(STYLE_URL)
+            map.setStyle(builder, onLoaded)
         }
     }
 
@@ -152,8 +159,10 @@ fun MapScreen(achieved: List<AchievedEntity>, totalRegions: Int?) {
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text("달성 ${achieved.size} / ${totalRegions ?: "…"}", style = MaterialTheme.typography.titleMedium)
-                if (holder.usedFallback) {
-                    Text("오프라인: 배경지도 없이 표시", style = MaterialTheme.typography.bodySmall)
+                if (offlineMode) {
+                    Text("오프라인 모드: 배경지도 요청 안 함", style = MaterialTheme.typography.bodySmall)
+                } else if (holder.usedFallback) {
+                    Text("인터넷 연결 안 됨: 배경지도 없이 표시", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

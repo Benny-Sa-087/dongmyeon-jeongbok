@@ -6,3 +6,4 @@ local.properties
 .DS_Store
 data-tools/node_modules/
 data-tools/*.geojson
+*.zip
