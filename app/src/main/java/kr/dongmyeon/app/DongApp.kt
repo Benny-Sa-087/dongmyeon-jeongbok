@@ -33,11 +33,17 @@ class DongApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CH_ACHIEVED, "새 지역 달성", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_REMINDER, "실행 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "설정한 요일·시간에 가까운 미달성 지역을 추천"
+            }
+        )
     }
 
     companion object {
         const val CH_TRACKING = "tracking"
         const val CH_ACHIEVED = "achieved"
+        const val CH_REMINDER = "reminder"
 
         fun repo(context: Context) = (context.applicationContext as DongApp).repo
         fun prefs(context: Context) = (context.applicationContext as DongApp).prefs

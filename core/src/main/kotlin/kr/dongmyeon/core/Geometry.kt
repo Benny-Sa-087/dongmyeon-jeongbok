@@ -37,6 +37,18 @@ class BBox(val minX: Double, val minY: Double, val maxX: Double, val maxY: Doubl
 }
 
 object Geo {
+    private const val EARTH_RADIUS_M = 6_371_000.0
+
+    /** 두 경위도 점 사이의 대략적 거리(m). 근처 추천 등 정밀도가 크게 중요하지 않은 곳에 쓴다. */
+    fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val a = Math.sin(dLat / 2).let { it * it } +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLng / 2).let { it * it }
+        return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a))
+    }
+
     /** 짝-홀(ray casting) 판정. 링이 닫혀 있든 아니든 동작한다. */
     fun ringContains(r: Ring, x: Double, y: Double): Boolean {
         var inside = false

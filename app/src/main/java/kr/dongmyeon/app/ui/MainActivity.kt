@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kr.dongmyeon.app.DongApp
 import kr.dongmyeon.app.tracking.Permissions
+import kr.dongmyeon.app.tracking.ReminderScheduler
 import kr.dongmyeon.app.tracking.TrackingService
 
 private data class Tab(val label: String, val icon: ImageVector)
@@ -53,12 +54,14 @@ class MainActivity : ComponentActivity() {
 
         val repo = DongApp.repo(this)
         val prefs = DongApp.prefs(this)
+        ReminderScheduler.ensureScheduled(this, prefs.reminder.value)
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2E7D32))) {
                 val achieved by repo.achieved.collectAsStateWithLifecycle(initialValue = emptyList())
                 val live by repo.live.collectAsStateWithLifecycle()
                 val running by TrackingService.isRunning.collectAsStateWithLifecycle()
                 val offlineMode by prefs.offlineMode.collectAsStateWithLifecycle()
+                val reminder by prefs.reminder.collectAsStateWithLifecycle()
                 val total by produceState<Int?>(null) { value = repo.regions().regions.size }
                 var tab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -80,7 +83,7 @@ class MainActivity : ComponentActivity() {
                         when (tab) {
                             0 -> MapScreen(achieved, total, offlineMode)
                             1 -> RecordsScreen(achieved)
-                            else -> SettingsScreen(repo, running, live, prefs, offlineMode)
+                            else -> SettingsScreen(repo, running, live, prefs, offlineMode, reminder)
                         }
                     }
                 }

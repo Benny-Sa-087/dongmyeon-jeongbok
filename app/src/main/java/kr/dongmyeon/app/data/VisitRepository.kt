@@ -105,6 +105,12 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         _live.value = LiveStatus()
     }
 
+    /** 달성한 지역 코드 집합(실행 알림에서 미달성 지역을 고를 때 씀) */
+    suspend fun achievedCodes(): Set<String> = dao.allAchieved().mapTo(HashSet()) { it.code }
+
+    /** DB에 저장된 마지막 유효 위치(기록이 꺼져 있어도 남아 있을 수 있음) */
+    suspend fun lastKnownFix(): Fix? = dao.lastPoint()?.let { Fix(it.lat, it.lng, it.accuracyM, it.timeMillis) }
+
     companion object {
         const val REGIONS_ASSET = "regions.geojson"
     }

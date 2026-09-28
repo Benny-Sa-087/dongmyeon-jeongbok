@@ -23,6 +23,22 @@ class Region(
     /** 마지막 토큰(읍면동 이름만) */
     val shortName: String get() = name.substringAfterLast(' ')
 
+    /**
+     * 가장 큰 폴리곤 외곽 링 좌표의 단순 평균. 정확한 도형 무게중심은 아니지만
+     * "근처 미달성 지역 추천"처럼 정밀도가 중요하지 않은 용도로는 충분하다.
+     */
+    val centroidLat: Double
+    val centroidLng: Double
+
+    init {
+        val outer = polygons.maxByOrNull { it.outer.size }?.outer
+        var sx = 0.0; var sy = 0.0
+        val n = outer?.size ?: 0
+        if (outer != null) for (i in 0 until n) { sx += outer.x(i); sy += outer.y(i) }
+        centroidLng = if (n > 0) sx / n else bbox.let { (it.minX + it.maxX) / 2 }
+        centroidLat = if (n > 0) sy / n else bbox.let { (it.minY + it.maxY) / 2 }
+    }
+
     fun contains(lat: Double, lng: Double): Boolean =
         bbox.contains(lng, lat) && polygons.any { Geo.polygonContains(it, lng, lat) }
 

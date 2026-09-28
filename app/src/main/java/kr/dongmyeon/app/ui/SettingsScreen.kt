@@ -9,6 +9,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.app.TimePickerDialog
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -41,15 +44,33 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.launch
 import kr.dongmyeon.app.data.AppPrefs
 import kr.dongmyeon.app.data.LiveStatus
+import kr.dongmyeon.app.data.ReminderSchedule
 import kr.dongmyeon.app.data.VisitRepository
 import kr.dongmyeon.app.tracking.Permissions
+import kr.dongmyeon.app.tracking.ReminderScheduler
+import kr.dongmyeon.app.tracking.ReminderWorker
 import kr.dongmyeon.app.tracking.TrackingService
+import java.util.Calendar
+
+private val DAY_LABELS = listOf(
+    Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
+    Calendar.THURSDAY to "목", Calendar.FRIDAY to "금", Calendar.SATURDAY to "토", Calendar.SUNDAY to "일",
+)
 
 @Composable
-fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus, prefs: AppPrefs, offlineMode: Boolean) {
+fun SettingsScreen(
+    repo: VisitRepository,
+    running: Boolean,
+    live: LiveStatus,
+    prefs: AppPrefs,
+    offlineMode: Boolean,
+    reminder: ReminderSchedule,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 설정 화면에서 돌아올 때마다 권한 상태 새로 읽기
@@ -166,6 +187,62 @@ fun SettingsScreen(repo: VisitRepository, running: Boolean, live: LiveStatus, pr
                 }
                 Switch(checked = offlineMode, onCheckedChange = { prefs.setOfflineMode(it) })
             }
+        }
+
+        Section("실행 알림") {
+            Text(
+                "설정한 요일·시간이 되면 지금 위치에서 가까운 미달성 지역 3곳을 알림으로 바로 추천합니다. " +
+                    "계획을 따로 세울 필요 없이 알림만 보고 나가면 됩니다.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("알림 켜기", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = reminder.enabled,
+                    onCheckedChange = {
+                        val next = reminder.copy(enabled = it)
+                        prefs.setReminder(next)
+                        ReminderScheduler.apply(context, next)
+                    },
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                DAY_LABELS.forEach { (day, label) ->
+                    FilterChip(
+                        selected = reminder.dayOfWeek == day,
+                        onClick = {
+                            val next = reminder.copy(dayOfWeek = day)
+                            prefs.setReminder(next)
+                            ReminderScheduler.apply(context, next)
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "시간: %02d:%02d".format(reminder.hour, reminder.minute),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                TextButton(onClick = {
+                    TimePickerDialog(
+                        context,
+                        { _, h, m ->
+                            val next = reminder.copy(hour = h, minute = m)
+                            prefs.setReminder(next)
+                            ReminderScheduler.apply(context, next)
+                        },
+                        reminder.hour, reminder.minute, true,
+                    ).show()
+                }) { Text("시간 변경") }
+            }
+            TextButton(onClick = {
+                WorkManager.getInstance(context).enqueue(OneTimeWorkRequestBuilder<ReminderWorker>().build())
+            }) { Text("지금 테스트 알림 보내기") }
         }
 
         Section("데이터") {
