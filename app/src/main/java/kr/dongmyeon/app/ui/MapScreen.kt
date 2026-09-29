@@ -291,16 +291,10 @@ private fun RegionDetailCard(
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var pendingCameraFile by remember(code) { mutableStateOf<File?>(null) }
     var viewingPhoto by remember { mutableStateOf<PhotoEntity?>(null) }
     val photos by remember(code) { repo.photosOf(code) }.collectAsStateWithLifecycle(initialValue = emptyList())
     val name = achieved?.name ?: fallbackName ?: code
 
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = pendingCameraFile
-        if (success && file != null) scope.launch { repo.commitPhoto(code, file) }
-        pendingCameraFile = null
-    }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch { repo.addPhotoFromUri(code, uri) }
     }
@@ -323,14 +317,6 @@ private fun RegionDetailCard(
 
             Text("추억 사진", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    val (file, uri) = repo.preparePhotoFile(code)
-                    pendingCameraFile = file
-                    cameraLauncher.launch(uri)
-                }) {
-                    Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text(" 촬영")
-                }
                 TextButton(onClick = {
                     galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) {
