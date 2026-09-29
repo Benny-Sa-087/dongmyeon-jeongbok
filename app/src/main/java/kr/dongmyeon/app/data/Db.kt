@@ -161,6 +161,9 @@ abstract class VisitDao {
     @Query("SELECT * FROM photos WHERE code = :code ORDER BY takenAt DESC")
     abstract fun observePhotos(code: String): Flow<List<PhotoEntity>>
 
+    @Query("SELECT * FROM photos")
+    abstract suspend fun allPhotos(): List<PhotoEntity>
+
     /** 사진이 하나 이상 있는 지역 코드 목록(지도 깃발 표시용) */
     @Query("SELECT DISTINCT code FROM photos")
     abstract fun observePhotoCodes(): Flow<List<String>>

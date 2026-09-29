@@ -11,6 +11,21 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kr.dongmyeon.core.Achievement
 import kr.dongmyeon.core.Fix
 import kr.dongmyeon.core.Geo
@@ -23,6 +38,14 @@ import kr.dongmyeon.core.VisitJudge
 import java.io.File
 import java.util.Calendar
 import java.util.UUID
+
+/** [VisitRepository.importBackup] 결과 요약 */
+data class BackupImportResult(
+    val achievedCount: Int,
+    val tripsCount: Int,
+    val photosCount: Int,
+    val skippedPhotos: Int,
+)
 
 /** 최근 수신 위치 정보(화면 표시용) */
 data class LiveStatus(
@@ -286,6 +309,90 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
 
     /** 가장 최근 "여행"(출퇴근이 아닌 구간)의 시작 시각. 대시보드용. */
     suspend fun lastTripAt(): Long? = dao.recentTrips(200).firstOrNull { it.isRoutine == false }?.startTime
+
+    /**
+     * 달성 지역·여행 기록·사진 메타데이터를 JSON 문자열로 내보낸다.
+     * 사진 원본 파일은 용량 문제로 JSON 안에 포함하지 않는다(경로만 기록). 그래서 기기를 바꾸거나
+     * 재설치하면 사진은 복원되지 않고, 같은 기기에서 앱만 업데이트한 경우에만 사진도 그대로 남는다.
+     */
+    suspend fun exportBackup(): String = withContext(Dispatchers.IO) {
+        val achievedList = dao.allAchieved()
+        val tripsList = dao.recentTrips(Int.MAX_VALUE)
+        val photosList = dao.allPhotos()
+        val obj = buildJsonObject {
+            put("version", 1)
+            put("exportedAt", System.currentTimeMillis())
+            putJsonArray("achieved") {
+                achievedList.forEach { a ->
+                    add(buildJsonObject {
+                        put("code", a.code); put("name", a.name); put("sido", a.sido); put("sgg", a.sgg)
+                        put("firstVisitedAt", a.firstVisitedAt); put("method", a.method)
+                    })
+                }
+            }
+            putJsonArray("trips") {
+                tripsList.forEach { t ->
+                    add(buildJsonObject {
+                        put("startTime", t.startTime); put("endTime", t.endTime)
+                        put("distanceMeters", t.distanceMeters); put("newRegionCount", t.newRegionCount)
+                        put("dayOfWeek", t.dayOfWeek)
+                        put("isRoutine", t.isRoutine)
+                    })
+                }
+            }
+            putJsonArray("photos") {
+                photosList.forEach { p ->
+                    add(buildJsonObject {
+                        put("code", p.code); put("filePath", p.filePath); put("takenAt", p.takenAt)
+                    })
+                }
+            }
+        }
+        Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), obj)
+    }
+
+    /**
+     * [exportBackup]이 만든 JSON을 다시 불러온다.
+     * 달성 지역은 이미 있는 코드는 건드리지 않고 없는 것만 채워 넣는다(로컬 데이터 우선, 덮어쓰지 않음).
+     * 여행 기록은 그냥 추가되므로, 같은 백업을 두 번 불러오면 중복될 수 있다.
+     * 사진은 파일이 실제로 남아있는 경우에만(같은 기기, 삭제 전) 복원한다.
+     */
+    suspend fun importBackup(text: String): BackupImportResult = withContext(Dispatchers.IO) {
+        val root = Json { ignoreUnknownKeys = true }.parseToJsonElement(text).jsonObject
+
+        val achievedList = root["achieved"]?.jsonArray.orEmpty().map {
+            val o = it.jsonObject
+            AchievedEntity(
+                code = o["code"]!!.jsonPrimitive.content, name = o["name"]!!.jsonPrimitive.content,
+                sido = o["sido"]!!.jsonPrimitive.content, sgg = o["sgg"]!!.jsonPrimitive.content,
+                firstVisitedAt = o["firstVisitedAt"]!!.jsonPrimitive.long, method = o["method"]!!.jsonPrimitive.content,
+            )
+        }
+        val tripsList = root["trips"]?.jsonArray.orEmpty().map {
+            val o = it.jsonObject
+            TripEntity(
+                startTime = o["startTime"]!!.jsonPrimitive.long, endTime = o["endTime"]!!.jsonPrimitive.long,
+                distanceMeters = o["distanceMeters"]!!.jsonPrimitive.double,
+                newRegionCount = o["newRegionCount"]!!.jsonPrimitive.int, dayOfWeek = o["dayOfWeek"]!!.jsonPrimitive.int,
+                isRoutine = (o["isRoutine"] as? JsonPrimitive)?.takeIf { p -> p != JsonNull }?.boolean,
+            )
+        }
+        val photosList = root["photos"]?.jsonArray.orEmpty().mapNotNull {
+            val o = it.jsonObject
+            val path = o["filePath"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            if (!File(path).exists()) return@mapNotNull null // 원본 파일이 없으면(다른 기기 등) 건너뜀
+            PhotoEntity(code = o["code"]!!.jsonPrimitive.content, filePath = path, takenAt = o["takenAt"]!!.jsonPrimitive.long)
+        }
+        val skippedPhotos = (root["photos"]?.jsonArray?.size ?: 0) - photosList.size
+
+        mutex.withLock {
+            dao.insertAchieved(achievedList) // IGNORE: 이미 있는 코드는 로컬 값을 유지
+            tripsList.forEach { dao.insertTrip(it) }
+            photosList.forEach { dao.insertPhoto(it) }
+            judge = null
+        }
+        BackupImportResult(achievedList.size, tripsList.size, photosList.size, skippedPhotos)
+    }
 
     companion object {
         const val REGIONS_ASSET = "regions.geojson"

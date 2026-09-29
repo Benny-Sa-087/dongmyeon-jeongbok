@@ -77,4 +77,7 @@ dependencies {
 
     // 방문 사진 썸네일/전체보기용 이미지 로더
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // 백업(JSON 내보내기/불러오기)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }

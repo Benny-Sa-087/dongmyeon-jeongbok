@@ -55,7 +55,9 @@ import kr.dongmyeon.app.tracking.Permissions
 import kr.dongmyeon.app.tracking.ReminderScheduler
 import kr.dongmyeon.app.tracking.ReminderWorker
 import kr.dongmyeon.app.tracking.TrackingService
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 private val DAY_LABELS = listOf(
     Calendar.MONDAY to "월", Calendar.TUESDAY to "화", Calendar.WEDNESDAY to "수",
@@ -77,6 +79,31 @@ fun SettingsScreen(
     var refresh by remember { mutableIntStateOf(0) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
     var confirmClear by remember { mutableStateOf(false) }
+    var backupStatus by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val json = repo.exportBackup()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+            }.onSuccess { backupStatus = "내보내기 완료" }
+                .onFailure { backupStatus = "내보내기 실패: ${it.message}" }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: error("파일을 읽을 수 없습니다")
+                repo.importBackup(text)
+            }.onSuccess { r ->
+                backupStatus = "불러오기 완료: 지역 ${r.achievedCount} · 여행 ${r.tripsCount} · 사진 ${r.photosCount}곳" +
+                    if (r.skippedPhotos > 0) " (사진 ${r.skippedPhotos}개는 파일이 없어 건너뜀)" else ""
+            }.onFailure { backupStatus = "불러오기 실패: ${it.message}" }
+        }
+    }
 
     val fine = remember(refresh) { Permissions.hasFineLocation(context) }
     val background = remember(refresh) { Permissions.hasBackgroundLocation(context) }
@@ -248,10 +275,29 @@ fun SettingsScreen(
         }
 
         Section("데이터") {
+            Text(
+                "달성 지역·여행 기록을 JSON 파일로 저장하거나 불러옵니다. 사진은 경로만 기록되므로 " +
+                    "같은 기기에서 앱을 재설치하기 전이라면 사진도 함께 남아 있습니다.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val name = "benny-outbound-backup-${SimpleDateFormat("yyyyMMdd-HHmm", Locale.KOREA).format(java.util.Date())}.json"
+                        exportLauncher.launch(name)
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("내보내기") }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("불러오기") }
+            }
+            backupStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+
             OutlinedButton(onClick = { confirmClear = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("달성 기록 모두 지우기")
             }
-            Text("백업(JSON 내보내기/불러오기)은 3단계에서 추가됩니다.", style = MaterialTheme.typography.bodySmall)
         }
 
         Section("경계 데이터 출처") {
