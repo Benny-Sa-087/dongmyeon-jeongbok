@@ -35,12 +35,15 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
     private var index: RegionIndex? = null
     private var judge: VisitJudge? = null
 
-    // 현재 진행 중인 "구간"(기록 시작~정지)의 거리·신규지역 누적치.
-    // 앱 프로세스가 완전히 재시작되면 이 값은 초기화된다(진행 중이던 구간은 짧게 끊겨 기록될 수 있음).
+    // 현재 진행 중인 "여행" 구간의 거리·신규지역 누적치.
+    // 버튼으로 시작/정지하는 게 아니라, 위치가 들어오는데 진행 중인 구간이 없으면 자동으로 열리고
+    // 20분 이상 새 위치가 안 들어오면(=정지 중, 100m 거리 필터라 안 움직이면 위치 자체가 안 찍힘)
+    // 자동으로 닫힌다. 앱 프로세스가 완전히 재시작되면 이 값은 초기화된다(진행 중이던 구간은 유실될 수 있음).
     private var sessionStart: Long? = null
     private var sessionDistance = 0.0
     private var sessionNewRegions = 0
     private var sessionLastFix: Fix? = null
+    private var lastFixWallClock: Long? = null
 
     private val _live = MutableStateFlow(LiveStatus())
     val live: StateFlow<LiveStatus> = _live.asStateFlow()
@@ -90,11 +93,17 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         val confirmed = found.filter { it.method != Method.NEEDS_REVIEW }
         val flagged = found.filter { it.method == Method.NEEDS_REVIEW }
 
-        if (sessionStart != null) {
-            sessionLastFix?.let { prev -> sessionDistance += Geo.distanceMeters(prev.lat, prev.lng, fix.lat, fix.lng) }
-            sessionLastFix = fix
-            sessionNewRegions += confirmed.size
+        // 진행 중인 여행이 없으면 이 점이 새 여행의 시작이다(버튼 없이 자동으로 연다).
+        if (sessionStart == null) {
+            sessionStart = fix.timeMillis
+            sessionDistance = 0.0
+            sessionNewRegions = 0
+            sessionLastFix = null
         }
+        lastFixWallClock = System.currentTimeMillis()
+        sessionLastFix?.let { prev -> sessionDistance += Geo.distanceMeters(prev.lat, prev.lng, fix.lat, fix.lng) }
+        sessionLastFix = fix
+        sessionNewRegions += confirmed.size
 
         val st = j.state
         dao.saveStep(
@@ -135,25 +144,45 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         dao.deleteNeedsReview(listOf(code))
     }
 
-    /** 현장에서 "직접 방문" 버튼으로 확정 */
+    /**
+     * 현장에서 "직접 방문" 버튼으로 확정.
+     * 아직 미달성이면 새로 달성(ON_SITE)시키고, 이미 머무름/통과로 달성된 곳이면
+     * 최초 방문일은 그대로 두고 방문 방식만 "직접 방문"으로 올려 붙인다.
+     */
     suspend fun markOnSite(code: String): Achievement? = mutex.withLock {
+        val existing = dao.getAchieved(code)
+        if (existing != null) {
+            if (existing.method == Method.ON_SITE.name) return@withLock null // 이미 직접 방문으로 확인됨
+            dao.updateMethod(code, Method.ON_SITE.name)
+            return@withLock Achievement(existing.code, existing.name, existing.sido, existing.sgg, existing.firstVisitedAt, Method.ON_SITE)
+        }
         val a = judgeLocked().markOnSite(code, System.currentTimeMillis()) ?: return@withLock null
         dao.insertAchievedOne(AchievedEntity(a.code, a.name, a.sido, a.sgg, a.firstVisitedAt, a.method.name))
         dao.deleteNeedsReview(listOf(code))
         a
     }
 
-    /** 기록을 새로 시작할 때 호출: 이번 구간의 거리·신규지역 누적을 시작한다. */
-    suspend fun startSession() = mutex.withLock {
-        sessionStart = System.currentTimeMillis()
-        sessionDistance = 0.0
-        sessionNewRegions = 0
-        sessionLastFix = null
+    /**
+     * 서비스가 살아있는 동안 주기적으로(예: 1분마다) 호출.
+     * 마지막 위치가 들어온 뒤로 [TRIP_GAP_MS] 이상 조용하면 "정차·도착"으로 보고 여행을 자동 마감한다.
+     */
+    suspend fun checkTripTimeout() = mutex.withLock {
+        val start = sessionStart ?: return@withLock
+        val lastWall = lastFixWallClock ?: return@withLock
+        if (System.currentTimeMillis() - lastWall < TRIP_GAP_MS) return@withLock
+        finalizeSession(start, sessionLastFix?.timeMillis ?: lastWall)
+        sessionStart = null
+    }
+
+    /** 기록 자체를 끌 때 호출: 지금까지 쌓인 구간이 있으면 그 시점에서 마감한다. */
+    suspend fun endSession() = mutex.withLock {
+        val start = sessionStart ?: return@withLock
+        sessionStart = null
+        finalizeSession(start, sessionLastFix?.timeMillis ?: System.currentTimeMillis())
     }
 
     /**
-     * 기록을 정지할 때 호출: 이번 구간을 "여행"으로 저장하고,
-     * 최근 출퇴근성 구간들과 비교해 이번에도 평소 패턴인지 판정한다.
+     * 이번 구간을 "여행"으로 저장하고, 최근 출퇴근성 구간들과 비교해 평소 패턴인지 판정한다.
      *
      * 판정 기준(출퇴근용으로도 쓰는 차라 단순 "가동 여부"로는 못 가림):
      * - 새로 달성한 지역이 하나라도 있으면 무조건 "여행"(newRegionCount>0 → isRoutine=false)
@@ -161,11 +190,8 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
      * - 최근 평일 출퇴근성 구간이 5개 미만이면 기준을 아직 못 만든 것이므로 판정 보류(null)
      * - 기준이 있으면, 이번 거리가 "평소 평일 출퇴근 거리" 중앙값의 1.6배를 넘으면 "여행"
      */
-    suspend fun endSession() = mutex.withLock {
-        val start = sessionStart ?: return@withLock
-        sessionStart = null
-        val end = System.currentTimeMillis()
-        if (end - start < MIN_SESSION_MS) return@withLock // 너무 짧은 구간은 통계에 안 넣음
+    private suspend fun finalizeSession(start: Long, end: Long) {
+        if (end - start < MIN_SESSION_MS) return // 너무 짧은 구간은 통계에 안 넣음
 
         val dow = Calendar.getInstance().apply { timeInMillis = start }.get(Calendar.DAY_OF_WEEK)
         val isWeekday = dow != Calendar.SUNDAY && dow != Calendar.SATURDAY
@@ -216,5 +242,7 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         private const val MIN_SESSION_MS = 60_000L
         private const val MIN_BASELINE_TRIPS = 5
         private const val ROUTINE_SLACK = 1.6
+        /** 이만큼 새 위치가 안 들어오면 여행이 끝난 것으로 본다(주차 후 정지 상태로 간주). */
+        private const val TRIP_GAP_MS = 20 * 60_000L
     }
 }

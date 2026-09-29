@@ -179,6 +179,7 @@ fun MapScreen(repo: VisitRepository, achieved: List<AchievedEntity>, totalRegion
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text("달성 ${achieved.size} / ${totalRegions ?: "…"}", style = MaterialTheme.typography.titleMedium)
+                Text("지역을 눌러 상세정보·직접 방문 기록", style = MaterialTheme.typography.bodySmall)
                 if (offlineMode) {
                     Text("오프라인 모드: 배경지도 요청 안 함", style = MaterialTheme.typography.bodySmall)
                 } else if (holder.usedFallback) {
@@ -200,9 +201,9 @@ fun MapScreen(repo: VisitRepository, achieved: List<AchievedEntity>, totalRegion
                         if (a != null) "달성 · ${formatDateTime(a.firstVisitedAt)} · ${methodLabel(a.method)}" else "미달성",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    if (a == null) {
+                    if (a?.method != "ON_SITE") {
                         TextButton(onClick = { scope.launch { repo.markOnSite(code) } }) {
-                            Text("여기 직접 방문으로 기록")
+                            Text(if (a == null) "여기 직접 방문으로 기록" else "직접 방문으로 확인")
                         }
                     }
                 }

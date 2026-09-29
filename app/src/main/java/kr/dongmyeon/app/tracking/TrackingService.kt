@@ -19,9 +19,11 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kr.dongmyeon.app.DongApp
 import kr.dongmyeon.app.R
@@ -74,6 +76,13 @@ class TrackingService : LifecycleService() {
                 updateNotification()
             }
         }
+        // "여행"은 버튼이 아니라 움직임 공백으로 자동 마감된다. 1분마다 확인한다.
+        lifecycleScope.launch {
+            while (isActive) {
+                delay(60_000)
+                repo.checkTripTimeout()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -99,12 +108,11 @@ class TrackingService : LifecycleService() {
 
         val fresh = intent?.action == ACTION_START
         lifecycleScope.launch {
-            // 사용자가 새로 시작한 경우에만 이전 기록의 마지막 점과 끊고 새 "여행" 구간을 연다.
-            // (시스템이 서비스를 재시작한 경우엔 이어서 기록·이어서 같은 구간으로 침)
+            // 사용자가 새로 시작한 경우에만 이전 기록의 마지막 점과 끊는다.
+            // (시스템이 서비스를 재시작한 경우엔 이어서 기록) 여행 구간 자체는 버튼과 무관하게
+            // 다음 위치가 들어올 때 자동으로 열린다(VisitRepository.onFix 참고).
             if (fresh && !updatesRequested) {
-                val repo = DongApp.repo(this@TrackingService)
-                repo.breakTrack()
-                repo.startSession()
+                DongApp.repo(this@TrackingService).breakTrack()
             }
             requestUpdates()
         }

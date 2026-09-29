@@ -82,6 +82,12 @@ abstract class VisitDao {
     @Query("SELECT * FROM achieved")
     abstract suspend fun allAchieved(): List<AchievedEntity>
 
+    @Query("SELECT * FROM achieved WHERE code = :code")
+    abstract suspend fun getAchieved(code: String): AchievedEntity?
+
+    @Query("UPDATE achieved SET method = :method WHERE code = :code")
+    abstract suspend fun updateMethod(code: String, method: String)
+
     @Query("SELECT * FROM hits")
     abstract suspend fun allHits(): List<HitEntity>
 
