@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
                 val achieved by repo.achieved.collectAsStateWithLifecycle(initialValue = emptyList())
                 val needsReview by repo.needsReview.collectAsStateWithLifecycle(initialValue = emptyList())
                 val trips by repo.trips.collectAsStateWithLifecycle(initialValue = emptyList())
+                val photoCodes by repo.photoCodes.collectAsStateWithLifecycle(initialValue = emptyList())
                 val live by repo.live.collectAsStateWithLifecycle()
                 val running by TrackingService.isRunning.collectAsStateWithLifecycle()
                 val offlineMode by prefs.offlineMode.collectAsStateWithLifecycle()
@@ -85,7 +86,7 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         when (tab) {
-                            0 -> MapScreen(repo, achieved, total, offlineMode)
+                            0 -> MapScreen(repo, achieved, total, offlineMode, photoCodes)
                             1 -> RecordsScreen(repo, achieved, needsReview)
                             2 -> VehicleScreen(trips, needsReview.size)
                             else -> SettingsScreen(repo, running, live, prefs, offlineMode, reminder)

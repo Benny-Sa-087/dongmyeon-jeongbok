@@ -74,4 +74,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     implementation("org.maplibre.gl:android-sdk:11.8.0")
+
+    // 방문 사진 썸네일/전체보기용 이미지 로더
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }

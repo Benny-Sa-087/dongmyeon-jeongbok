@@ -1,6 +1,8 @@
 package kr.dongmyeon.app.data
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +20,9 @@ import kr.dongmyeon.core.LastPoint
 import kr.dongmyeon.core.Method
 import kr.dongmyeon.core.RegionIndex
 import kr.dongmyeon.core.VisitJudge
+import java.io.File
 import java.util.Calendar
+import java.util.UUID
 
 /** 최근 수신 위치 정보(화면 표시용) */
 data class LiveStatus(
@@ -162,6 +166,51 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         a
     }
 
+    val photoCodes: Flow<List<String>> = dao.observePhotoCodes()
+
+    fun photosOf(code: String): Flow<List<PhotoEntity>> = dao.observePhotos(code)
+
+    /** 카메라로 찍을 사진을 저장할 빈 파일을 미리 만들고, 그 FileProvider Uri 를 돌려준다. */
+    fun preparePhotoFile(code: String): Pair<File, Uri> {
+        val dir = File(context.filesDir, "photos/$code").apply { mkdirs() }
+        val file = File(dir, "${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        return file to uri
+    }
+
+    /** 카메라 촬영 뒤 [preparePhotoFile]로 만든 파일을 실제 등록에 반영한다. */
+    suspend fun commitPhoto(code: String, file: File) = mutex.withLock {
+        insertPhotoLocked(code, file.absolutePath)
+    }
+
+    /** 갤러리에서 고른 이미지를 앱 내부 저장소로 복사해 등록한다. */
+    suspend fun addPhotoFromUri(code: String, source: Uri) = withContext(Dispatchers.IO) {
+        val (file, _) = preparePhotoFile(code)
+        context.contentResolver.openInputStream(source)?.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+        mutex.withLock { insertPhotoLocked(code, file.absolutePath) }
+    }
+
+    /** 사진이 생겼다는 건 실제로 다녀왔다는 뜻이므로, 아직 달성 전이면 직접 방문으로 같이 달성시킨다. */
+    private suspend fun insertPhotoLocked(code: String, filePath: String) {
+        val existing = dao.getAchieved(code)
+        if (existing == null) {
+            judgeLocked().markOnSite(code, System.currentTimeMillis())?.let {
+                dao.insertAchievedOne(AchievedEntity(it.code, it.name, it.sido, it.sgg, it.firstVisitedAt, it.method.name))
+                dao.deleteNeedsReview(listOf(code))
+            }
+        } else if (existing.method != Method.ON_SITE.name) {
+            dao.updateMethod(code, Method.ON_SITE.name)
+        }
+        dao.insertPhoto(PhotoEntity(code = code, filePath = filePath, takenAt = System.currentTimeMillis()))
+    }
+
+    suspend fun deletePhoto(photo: PhotoEntity) {
+        runCatching { File(photo.filePath).delete() }
+        dao.deletePhoto(photo.id)
+    }
+
     /**
      * 서비스가 살아있는 동안 주기적으로(예: 1분마다) 호출.
      * 마지막 위치가 들어온 뒤로 [TRIP_GAP_MS] 이상 조용하면 "정차·도착"으로 보고 여행을 자동 마감한다.
@@ -221,9 +270,10 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2 else sorted[mid]
     }
 
-    /** 모든 달성 기록 삭제 */
+    /** 모든 달성 기록 삭제(사진 파일 포함) */
     suspend fun clearAll() = mutex.withLock {
         dao.clearAll()
+        withContext(Dispatchers.IO) { File(context.filesDir, "photos").deleteRecursively() }
         judge = null
         _live.value = LiveStatus()
     }

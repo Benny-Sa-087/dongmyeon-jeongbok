@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 사진이 있는 지역을 지도에 표시하는 깃발 아이콘 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp" android:height="32dp"
+    android:viewportWidth="32" android:viewportHeight="32">
+    <path android:fillColor="#37474F"
+        android:pathData="M9,4 L9,29 L11,29 L11,19 L9,19 Z" />
+    <path android:fillColor="#F9A825"
+        android:pathData="M9,4 L25,8 L9,14 Z" />
+</vector>

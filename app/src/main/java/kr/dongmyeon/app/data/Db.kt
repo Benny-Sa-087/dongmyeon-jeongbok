@@ -74,6 +74,16 @@ data class TripEntity(
     val isRoutine: Boolean?,
 )
 
+/** "직접 방문" 지역에 남긴 추억 사진. 파일은 앱 내부 저장소에 보관한다. */
+@Entity(tableName = "photos")
+data class PhotoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val code: String,
+    /** 앱 내부 저장소(filesDir) 기준 절대 경로 */
+    val filePath: String,
+    val takenAt: Long,
+)
+
 @Dao
 abstract class VisitDao {
     @Query("SELECT * FROM achieved ORDER BY firstVisitedAt DESC")
@@ -145,6 +155,25 @@ abstract class VisitDao {
     @Query("DELETE FROM trips")
     abstract suspend fun clearTrips()
 
+    @Insert
+    abstract suspend fun insertPhoto(photo: PhotoEntity): Long
+
+    @Query("SELECT * FROM photos WHERE code = :code ORDER BY takenAt DESC")
+    abstract fun observePhotos(code: String): Flow<List<PhotoEntity>>
+
+    /** 사진이 하나 이상 있는 지역 코드 목록(지도 깃발 표시용) */
+    @Query("SELECT DISTINCT code FROM photos")
+    abstract fun observePhotoCodes(): Flow<List<String>>
+
+    @Query("SELECT * FROM photos WHERE id = :id")
+    abstract suspend fun getPhoto(id: Long): PhotoEntity?
+
+    @Query("DELETE FROM photos WHERE id = :id")
+    abstract suspend fun deletePhoto(id: Long)
+
+    @Query("DELETE FROM photos")
+    abstract suspend fun clearPhotos()
+
     @Transaction
     open suspend fun saveStep(
         newAchieved: List<AchievedEntity>,
@@ -170,16 +199,16 @@ abstract class VisitDao {
 
     @Transaction
     open suspend fun clearAll() {
-        clearAchieved(); clearHits(); clearLastPoint(); clearNeedsReview(); clearTrips()
+        clearAchieved(); clearHits(); clearLastPoint(); clearNeedsReview(); clearTrips(); clearPhotos()
     }
 }
 
 @Database(
     entities = [
         AchievedEntity::class, HitEntity::class, LastPointEntity::class,
-        NeedsReviewEntity::class, TripEntity::class,
+        NeedsReviewEntity::class, TripEntity::class, PhotoEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
