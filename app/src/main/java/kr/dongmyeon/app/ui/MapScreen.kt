@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,12 +27,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -148,6 +153,13 @@ fun MapScreen(
     var styleReady by remember { mutableStateOf(0) }
     var regionIndex by remember { mutableStateOf<RegionIndex?>(null) }
     val achievedByCode = remember(achieved) { achieved.associateBy { it.code } }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val searchResults = remember(searchQuery, regionIndex) {
+        val idx = regionIndex
+        if (idx == null || searchQuery.isBlank()) emptyList()
+        else idx.regions.filter { it.name.contains(searchQuery, ignoreCase = true) }.take(30)
+    }
 
     LaunchedEffect(Unit) { regionIndex = repo.regions() }
 
@@ -274,6 +286,65 @@ fun MapScreen(
                     Text("인터넷 연결 안 됨: 배경지도 없이 표시", style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
+
+        if (searchOpen) {
+            Card(
+                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp).fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("동네 이름 검색 (예: 구월1동)") },
+                        )
+                        IconButton(onClick = { searchOpen = false; searchQuery = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "검색 닫기")
+                        }
+                    }
+                    if (searchQuery.isNotBlank()) {
+                        if (searchResults.isEmpty()) {
+                            Text(
+                                "검색 결과 없음",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(8.dp),
+                            )
+                        } else {
+                            LazyColumn(Modifier.heightIn(max = 300.dp)) {
+                                items(searchResults, key = { it.code }) { region ->
+                                    Text(
+                                        region.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                holder.map?.animateCamera(
+                                                    CameraUpdateFactory.newLatLngZoom(
+                                                        LatLng(region.centroidLat, region.centroidLng), 14.0,
+                                                    )
+                                                )
+                                                selected = region.code
+                                                searchOpen = false
+                                                searchQuery = ""
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    )
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            FloatingActionButton(
+                onClick = { searchOpen = true },
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+            ) { Icon(Icons.Filled.Search, contentDescription = "지역 검색") }
         }
 
         selected?.let { code ->
