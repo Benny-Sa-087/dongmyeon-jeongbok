@@ -493,8 +493,11 @@ private fun addRegionLayers(context: Context, style: Style) {
  * 리터럴은 JSON 그대로("\"#000\"" 또는 "0.5" 같은 문자열) 넣는다.
  */
 private fun groupedMatchExpr(pairs: List<Pair<String, String>>, defaultLiteral: String): Expression {
-    if (pairs.isEmpty()) return Expression.Converter.convert(defaultLiteral)
-    val byValue = pairs.groupBy({ it.second }, { it.first })
+    // pairs 가 비어 있으면(달성 지역이 하나도 없을 때) match 표현식 없이 리터럴만 convert() 에 넘기게 되는데,
+    // 이 리터럴은 JSON 배열이 아니라 문자열/숫자 하나뿐이라 파서가 "JsonArray 를 기대했는데 JsonPrimitive"라며
+    // 즉시 죽는다. 실제로는 없는 코드("") 하나를 넣어 항상 유효한 match 배열 형태를 유지한다.
+    val effectivePairs = pairs.ifEmpty { listOf("" to defaultLiteral) }
+    val byValue = effectivePairs.groupBy({ it.second }, { it.first })
     val clauses = byValue.entries.joinToString(",") { (value, codes) ->
         val labels = codes.joinToString(",") { "\"$it\"" }
         "[$labels],$value"
