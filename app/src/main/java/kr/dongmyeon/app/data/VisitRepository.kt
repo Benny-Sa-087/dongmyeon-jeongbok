@@ -220,21 +220,15 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
     /**
      * "사진 자동 인식" 기능: 갤러리 사진의 EXIF GPS로 찾은 지역에, EXIF 촬영시각을 그대로 실제 방문시각으로
      * 써서 등록한다(스캔한 지금 시각이 아니라 사진이 찍힌 그때가 방문 시각이 되도록).
-     * 새로 달성된 경우에만 그 [Achievement]를 돌려준다(알림용). 원본은 건드리지 않고 내부 저장소로 복사한다.
+     * 새로 달성된 경우에만 그 [Achievement]를 돌려준다(알림용).
+     *
+     * 원본 사진을 내부 저장소로 복사하지 않고 갤러리의 content:// Uri 를 그대로 기록한다 — 수동으로
+     * 카메라/갤러리에서 붙이는 사진과 달리 자동 스캔은 대상이 훨씬 많을 수 있어서, 복사하면 저장공간을
+     * 그대로 두 배로 먹게 된다. 이 기능이 갤러리 읽기 권한을 이미 갖고 있어야만 동작하므로 나중에 다시
+     * 읽는 데도 문제가 없다(단, 사용자가 원본 사진을 갤러리에서 지우면 썸네일도 함께 사라진다).
      */
-    suspend fun importPhotoFromGallery(code: String, source: Uri, takenAtMillis: Long): Achievement? = withContext(Dispatchers.IO) {
-        val (file, _) = preparePhotoFile(code)
-        val copied = runCatching {
-            context.contentResolver.openInputStream(source)?.use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
-            } != null
-        }.getOrDefault(false)
-        if (!copied) {
-            file.delete()
-            return@withContext null
-        }
-        mutex.withLock { insertPhotoLocked(code, file.absolutePath, takenAtMillis) }
-    }
+    suspend fun importPhotoFromGallery(code: String, source: Uri, takenAtMillis: Long): Achievement? =
+        mutex.withLock { insertPhotoLocked(code, source.toString(), takenAtMillis) }
 
     /** 사진이 생겼다는 건 실제로 다녀왔다는 뜻이므로, 아직 달성 전이면 직접 방문으로 같이 달성시킨다. */
     private suspend fun insertPhotoLocked(code: String, filePath: String, takenAt: Long = System.currentTimeMillis()): Achievement? {
@@ -254,7 +248,9 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
     }
 
     suspend fun deletePhoto(photo: PhotoEntity) {
-        runCatching { File(photo.filePath).delete() }
+        // 자동 인식으로 등록된 사진은 content:// Uri(갤러리 원본)를 그대로 가리키므로 지우면 안 된다.
+        // 앱이 직접 복사해서 갖고 있는 내부 저장소 파일일 때만 삭제한다.
+        if (!photo.filePath.startsWith("content://")) runCatching { File(photo.filePath).delete() }
         dao.deletePhoto(photo.id)
     }
 
@@ -407,7 +403,9 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         val photosList = root["photos"]?.jsonArray.orEmpty().mapNotNull {
             val o = it.jsonObject
             val path = o["filePath"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            if (!File(path).exists()) return@mapNotNull null // 원본 파일이 없으면(다른 기기 등) 건너뜀
+            // content:// Uri(자동 인식된 사진)는 실존 여부를 파일시스템으로 확인할 수 없으니 그대로 두고,
+            // 내부 저장소 경로만 실제로 파일이 남아 있는지 확인한다(다른 기기·재설치 등으로 없어졌을 수 있음).
+            if (!path.startsWith("content://") && !File(path).exists()) return@mapNotNull null
             PhotoEntity(code = o["code"]!!.jsonPrimitive.content, filePath = path, takenAt = o["takenAt"]!!.jsonPrimitive.long)
         }
         val skippedPhotos = (root["photos"]?.jsonArray?.size ?: 0) - photosList.size

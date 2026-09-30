@@ -79,7 +79,10 @@ data class TripEntity(
 data class PhotoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val code: String,
-    /** 앱 내부 저장소(filesDir) 기준 절대 경로 */
+    /**
+     * 카메라 촬영·갤러리 수동 등록: 앱 내부 저장소(filesDir) 기준 절대 경로(복사본).
+     * 사진 자동 인식: 원본을 복사하지 않고 갤러리 사진의 content:// Uri 를 그대로 저장.
+     */
     val filePath: String,
     val takenAt: Long,
 )
