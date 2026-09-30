@@ -75,6 +75,29 @@ class AppPrefs(context: Context) {
             .apply()
     }
 
+    /**
+     * "사진 자동 인식" 기능(갤러리 사진의 EXIF GPS·촬영시각으로 방문 자동 기록). 기본은 꺼짐(opt-in) —
+     * 갤러리 전체를 읽는 권한이 필요한 기능이라 사용자가 직접 켜야 동작한다.
+     */
+    private val _photoAutoImport = MutableStateFlow(prefs.getBoolean(KEY_PHOTO_AUTO, false))
+    val photoAutoImport: StateFlow<Boolean> = _photoAutoImport.asStateFlow()
+
+    fun setPhotoAutoImport(on: Boolean) {
+        prefs.edit().putBoolean(KEY_PHOTO_AUTO, on).apply()
+        _photoAutoImport.value = on
+    }
+
+    /** 마지막으로 스캔한 갤러리 사진의 MediaStore _ID(다음 스캔은 이보다 큰 것만 확인) */
+    var lastPhotoImportId: Long
+        get() = prefs.getLong(KEY_PHOTO_LAST_ID, 0L)
+        set(v) { prefs.edit().putLong(KEY_PHOTO_LAST_ID, v).apply() }
+
+    fun setLastPhotoImportSummary(text: String) {
+        prefs.edit().putString(KEY_PHOTO_SUMMARY, text).apply()
+    }
+
+    fun lastPhotoImportSummary(): String? = prefs.getString(KEY_PHOTO_SUMMARY, null)
+
     companion object {
         private const val FILE = "app_prefs"
         private const val KEY_OFFLINE = "offline_map_mode"
@@ -82,5 +105,8 @@ class AppPrefs(context: Context) {
         private const val KEY_REMINDER_DAY = "reminder_day"
         private const val KEY_REMINDER_HOUR = "reminder_hour"
         private const val KEY_REMINDER_MIN = "reminder_min"
+        private const val KEY_PHOTO_AUTO = "photo_auto_import"
+        private const val KEY_PHOTO_LAST_ID = "photo_auto_last_id"
+        private const val KEY_PHOTO_SUMMARY = "photo_auto_summary"
     }
 }

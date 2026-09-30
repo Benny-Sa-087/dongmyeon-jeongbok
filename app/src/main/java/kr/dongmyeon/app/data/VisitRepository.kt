@@ -217,18 +217,40 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         mutex.withLock { insertPhotoLocked(code, file.absolutePath) }
     }
 
+    /**
+     * "사진 자동 인식" 기능: 갤러리 사진의 EXIF GPS로 찾은 지역에, EXIF 촬영시각을 그대로 실제 방문시각으로
+     * 써서 등록한다(스캔한 지금 시각이 아니라 사진이 찍힌 그때가 방문 시각이 되도록).
+     * 새로 달성된 경우에만 그 [Achievement]를 돌려준다(알림용). 원본은 건드리지 않고 내부 저장소로 복사한다.
+     */
+    suspend fun importPhotoFromGallery(code: String, source: Uri, takenAtMillis: Long): Achievement? = withContext(Dispatchers.IO) {
+        val (file, _) = preparePhotoFile(code)
+        val copied = runCatching {
+            context.contentResolver.openInputStream(source)?.use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            } != null
+        }.getOrDefault(false)
+        if (!copied) {
+            file.delete()
+            return@withContext null
+        }
+        mutex.withLock { insertPhotoLocked(code, file.absolutePath, takenAtMillis) }
+    }
+
     /** 사진이 생겼다는 건 실제로 다녀왔다는 뜻이므로, 아직 달성 전이면 직접 방문으로 같이 달성시킨다. */
-    private suspend fun insertPhotoLocked(code: String, filePath: String) {
+    private suspend fun insertPhotoLocked(code: String, filePath: String, takenAt: Long = System.currentTimeMillis()): Achievement? {
         val existing = dao.getAchieved(code)
+        var newAchievement: Achievement? = null
         if (existing == null) {
-            judgeLocked().markOnSite(code, System.currentTimeMillis())?.let {
+            judgeLocked().markOnSite(code, takenAt)?.let {
                 dao.insertAchievedOne(AchievedEntity(it.code, it.name, it.sido, it.sgg, it.firstVisitedAt, it.method.name))
                 dao.deleteNeedsReview(listOf(code))
+                newAchievement = it
             }
         } else if (existing.method != Method.ON_SITE.name) {
             dao.updateMethod(code, Method.ON_SITE.name)
         }
-        dao.insertPhoto(PhotoEntity(code = code, filePath = filePath, takenAt = System.currentTimeMillis()))
+        dao.insertPhoto(PhotoEntity(code = code, filePath = filePath, takenAt = takenAt))
+        return newAchievement
     }
 
     suspend fun deletePhoto(photo: PhotoEntity) {

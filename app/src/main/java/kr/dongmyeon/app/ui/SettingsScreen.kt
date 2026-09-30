@@ -47,11 +47,13 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kr.dongmyeon.app.data.AppPrefs
 import kr.dongmyeon.app.data.LiveStatus
 import kr.dongmyeon.app.data.ReminderSchedule
 import kr.dongmyeon.app.data.VisitRepository
 import kr.dongmyeon.app.tracking.Permissions
+import kr.dongmyeon.app.tracking.PhotoImportScheduler
 import kr.dongmyeon.app.tracking.ReminderScheduler
 import kr.dongmyeon.app.tracking.ReminderWorker
 import kr.dongmyeon.app.tracking.TrackingService
@@ -109,6 +111,10 @@ fun SettingsScreen(
     val background = remember(refresh) { Permissions.hasBackgroundLocation(context) }
     val notif = remember(refresh) { Permissions.hasNotifications(context) }
     val battery = remember(refresh) { Permissions.ignoresBatteryOptimization(context) }
+    val photoLibGranted = remember(refresh) { Permissions.hasPhotoLibrary(context) }
+    val mediaLocationGranted = remember(refresh) { Permissions.hasMediaLocation(context) }
+    val photoAutoImport by prefs.photoAutoImport.collectAsStateWithLifecycle()
+    var photoScanStatus by remember(refresh) { mutableStateOf(prefs.lastPhotoImportSummary()) }
 
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         refresh++
@@ -125,6 +131,15 @@ fun SettingsScreen(
             if (Build.VERSION.SDK_INT >= 33 && !Permissions.hasNotifications(context)) {
                 notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+    val photoPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        refresh++
+        if (Permissions.hasPhotoLibrary(context)) {
+            prefs.setPhotoAutoImport(true)
+            PhotoImportScheduler.apply(context, true)
         }
     }
 
@@ -274,6 +289,41 @@ fun SettingsScreen(
             }) { Text("지금 테스트 알림 보내기") }
         }
 
+        Section("사진 자동 인식") {
+            Text(
+                "휴대폰으로 찍은 사진에는 구글맵·갤러리 앱이 위치를 정확히 표시할 때 쓰는 GPS·촬영시각이 " +
+                    "그대로 들어있습니다. 이 정보로 어느 읍면동에서 찍었는지 찾아 '직접 방문'으로 자동 기록하고, " +
+                    "사진도 함께 등록합니다. 갤러리 전체를 읽는 권한이 필요해서 기본은 꺼져 있습니다.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("자동 인식 켜기", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = photoAutoImport,
+                    onCheckedChange = { on ->
+                        if (on) {
+                            if (photoLibGranted && mediaLocationGranted) {
+                                prefs.setPhotoAutoImport(true)
+                                PhotoImportScheduler.apply(context, true)
+                            } else {
+                                photoPermissionLauncher.launch(photoPermissions())
+                            }
+                        } else {
+                            prefs.setPhotoAutoImport(false)
+                            PhotoImportScheduler.apply(context, false)
+                        }
+                    },
+                )
+            }
+            if (photoAutoImport) {
+                Text(photoScanStatus ?: "아직 스캔한 적 없습니다.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = {
+                    PhotoImportScheduler.scanNow(context)
+                    photoScanStatus = "스캔 요청함(완료까지 잠시 걸릴 수 있어요)"
+                }) { Text("지금 스캔하기") }
+            }
+        }
+
         Section("데이터") {
             Text(
                 "달성 지역·여행 기록을 JSON 파일로 저장하거나 불러옵니다. 사진은 경로만 기록되므로 " +
@@ -325,6 +375,11 @@ fun SettingsScreen(
         )
     }
 }
+
+private fun photoPermissions(): Array<String> = buildList {
+    add(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)
+    if (Build.VERSION.SDK_INT >= 29) add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+}.toTypedArray()
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {

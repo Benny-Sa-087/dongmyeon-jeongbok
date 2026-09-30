@@ -80,4 +80,7 @@ dependencies {
 
     // 백업(JSON 내보내기/불러오기)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // 사진 자동 인식: 갤러리 사진의 EXIF GPS·촬영시각 읽기
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

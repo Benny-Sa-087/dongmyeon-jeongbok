@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kr.dongmyeon.app.DongApp
 import kr.dongmyeon.app.tracking.Permissions
+import kr.dongmyeon.app.tracking.PhotoImportScheduler
 import kr.dongmyeon.app.tracking.ReminderScheduler
 import kr.dongmyeon.app.tracking.TrackingService
 import java.io.File
@@ -80,6 +81,9 @@ class MainActivity : ComponentActivity() {
         val repo = DongApp.repo(this)
         val prefs = DongApp.prefs(this)
         ReminderScheduler.ensureScheduled(this, prefs.reminder.value)
+        if (prefs.photoAutoImport.value && Permissions.hasPhotoLibrary(this)) {
+            PhotoImportScheduler.apply(this, true)
+        }
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2E7D32))) {
                 val achieved by repo.achieved.collectAsStateWithLifecycle(initialValue = emptyList())
