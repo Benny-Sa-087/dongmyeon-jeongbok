@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kr.dongmyeon.app.DongApp
 import kr.dongmyeon.app.R
+import kr.dongmyeon.app.data.MAINTENANCE_ITEMS
+import kr.dongmyeon.app.data.isDue
 import kr.dongmyeon.app.ui.MainActivity
 import kr.dongmyeon.core.Geo
 import kr.dongmyeon.core.Region
@@ -42,14 +44,20 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 nearest.joinToString(" · ") { region -> "${region.shortName}(${distanceLabel(fix, region)})" }
             }
         }
-        notify(ctx, "$text\n\n출발 전 점검: ${maintenanceTip()}")
+        notify(ctx, "$text\n\n${maintenanceStatus(ctx)}")
         return Result.success()
     }
 
-    /** 오버랜딩 세팅 특유의 점검 항목을 매주 하나씩 돌아가며 안내(주 단위로 바뀜) */
-    private fun maintenanceTip(): String {
-        val week = (System.currentTimeMillis() / 604_800_000L).toInt()
-        return MAINTENANCE_TIPS[Math.floorMod(week, MAINTENANCE_TIPS.size)]
+    /** 요일별 고정 문구가 아니라, 실제 누적 주행거리·경과일 기준으로 지금 점검이 밀린 항목만 알린다. */
+    private suspend fun maintenanceStatus(ctx: Context): String {
+        val prefs = DongApp.prefs(ctx)
+        val total = DongApp.repo(ctx).totalDistanceMeters()
+        val now = System.currentTimeMillis()
+        val due = MAINTENANCE_ITEMS.filter { item ->
+            val (baseDistance, baseTime) = prefs.maintenanceBaseline(item.key, total)
+            item.isDue((total - baseDistance) / 1000.0, (now - baseTime) / 86_400_000L)
+        }
+        return if (due.isEmpty()) "정비 점검: 밀린 항목 없음" else "정비 점검 필요: ${due.joinToString(", ") { it.label }}"
     }
 
     private fun distanceLabel(fix: kr.dongmyeon.core.Fix, region: Region): String {
@@ -86,12 +94,5 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     companion object {
         private const val REMINDER_NOTIF_ID = 100
-        private val MAINTENANCE_TIPS = listOf(
-            "타이어 공기압",
-            "보조(서브) 배터리 전압",
-            "냉장고·인버터 작동 확인",
-            "워셔액·엔진오일 게이지",
-            "루프탑 텐트·짐 고정 상태",
-        )
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,9 +42,15 @@ fun methodLabel(method: String) = when (method) {
     else -> method
 }
 
-/** 최근 달성 지역 목록(최신순) + 확인 필요 지역 */
+/** 최근 달성 지역 목록(최신순) + 확인 필요 지역 + 전체/시도별 통계 */
 @Composable
-fun RecordsScreen(repo: VisitRepository, achieved: List<AchievedEntity>, needsReview: List<NeedsReviewEntity>) {
+fun RecordsScreen(
+    repo: VisitRepository,
+    achieved: List<AchievedEntity>,
+    needsReview: List<NeedsReviewEntity>,
+    totalRegions: Int?,
+    sidoTotals: Map<String, Int>?,
+) {
     val scope = rememberCoroutineScope()
 
     if (achieved.isEmpty() && needsReview.isEmpty()) {
@@ -54,6 +61,8 @@ fun RecordsScreen(repo: VisitRepository, achieved: List<AchievedEntity>, needsRe
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
+        item { StatsSection(achieved, totalRegions, sidoTotals) }
+
         if (needsReview.isNotEmpty()) {
             item {
                 Text(
@@ -104,4 +113,38 @@ fun RecordsScreen(repo: VisitRepository, achieved: List<AchievedEntity>, needsRe
             HorizontalDivider()
         }
     }
+}
+
+@Composable
+private fun StatsSection(achieved: List<AchievedEntity>, totalRegions: Int?, sidoTotals: Map<String, Int>?) {
+    Column(Modifier.padding(16.dp)) {
+        Text("통계", style = MaterialTheme.typography.titleLarge)
+        if (totalRegions != null && totalRegions > 0) {
+            val pct = achieved.size * 100.0 / totalRegions
+            Text(
+                "전체 ${achieved.size} / ${totalRegions}곳 (${"%.1f".format(pct)}%)",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            LinearProgressIndicator(
+                progress = { (pct / 100.0).toFloat() },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp),
+            )
+        }
+        if (sidoTotals != null) {
+            val achievedBySido = achieved.groupingBy { it.sido }.eachCount()
+            sidoTotals.entries.sortedByDescending { it.value }.forEach { (sido, total) ->
+                val done = achievedBySido[sido] ?: 0
+                val pct = if (total > 0) done * 100.0 / total else 0.0
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(sido, style = MaterialTheme.typography.bodyMedium)
+                    Text("$done/$total (${"%.0f".format(pct)}%)", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+    HorizontalDivider()
 }

@@ -61,6 +61,7 @@ import kotlinx.coroutines.launch
 import kr.dongmyeon.app.R
 import kr.dongmyeon.app.data.AchievedEntity
 import kr.dongmyeon.app.data.PhotoEntity
+import kr.dongmyeon.app.data.RoutePointEntity
 import kr.dongmyeon.app.data.VisitRepository
 import kr.dongmyeon.app.tracking.Permissions
 import kr.dongmyeon.core.RegionIndex
@@ -114,6 +115,8 @@ private const val LINE = "regions-line"
 private const val FLAG_SRC = "photo-flags"
 private const val FLAG_LAYER = "photo-flags-layer"
 private const val FLAG_ICON = "flag-icon"
+private const val ROUTE_SRC = "route"
+private const val ROUTE_LAYER = "route-line"
 
 // 전국 데이터(2단계)로 확장하면서 초기 화면도 전국이 한눈에 보이게 조정
 private val START_CAMERA = CameraPosition.Builder()
@@ -136,6 +139,7 @@ fun MapScreen(
     totalRegions: Int?,
     offlineMode: Boolean,
     photoCodes: List<String>,
+    routePoints: List<RoutePointEntity>,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -238,6 +242,13 @@ fun MapScreen(
             append("]}")
         }
         src.setGeoJson(json)
+    }
+
+    // 이동 경로 선. 오래(TRIP_GAP_MS 이상) 끊긴 구간은 잇지 않고 따로 그린다.
+    LaunchedEffect(routePoints, styleReady) {
+        val style = holder.style ?: return@LaunchedEffect
+        val src = style.getSourceAs<GeoJsonSource>(ROUTE_SRC) ?: return@LaunchedEffect
+        src.setGeoJson(buildRouteGeoJson(routePoints))
     }
 
     // 현재 위치 표시(권한이 있을 때)
@@ -395,6 +406,32 @@ private fun PhotoViewerDialog(photo: PhotoEntity, onDismiss: () -> Unit, onDelet
     }
 }
 
+/**
+ * 이동 경로 점들을 시간순으로 이어 LineString(들)로 만든다.
+ * 두 점 사이 시간 간격이 [VisitRepository.TRIP_GAP_MS] 이상이면(=정차 등으로 여행이 끊긴 구간)
+ * 잇지 않고 별도 구간(Feature)으로 나눈다.
+ */
+private fun buildRouteGeoJson(points: List<RoutePointEntity>): String {
+    val segments = mutableListOf<MutableList<RoutePointEntity>>()
+    var current = mutableListOf<RoutePointEntity>()
+    var prevTime: Long? = null
+    for (p in points) {
+        if (prevTime != null && p.timeMillis - prevTime!! > VisitRepository.TRIP_GAP_MS) {
+            if (current.size >= 2) segments.add(current)
+            current = mutableListOf()
+        }
+        current.add(p)
+        prevTime = p.timeMillis
+    }
+    if (current.size >= 2) segments.add(current)
+
+    val features = segments.joinToString(",") { seg ->
+        val coords = seg.joinToString(",") { "[${it.lng},${it.lat}]" }
+        """{"type":"Feature","geometry":{"type":"LineString","coordinates":[$coords]},"properties":{}}"""
+    }
+    return """{"type":"FeatureCollection","features":[$features]}"""
+}
+
 private fun addRegionLayers(context: Context, style: Style) {
     if (style.getSource(SRC) == null) {
         style.addSource(GeoJsonSource(SRC, URI("asset://${VisitRepository.REGIONS_ASSET}")))
@@ -414,6 +451,21 @@ private fun addRegionLayers(context: Context, style: Style) {
                 PropertyFactory.lineWidth(PENDING_STYLE.lineWidth),
                 PropertyFactory.lineOpacity(0.8f),
             )
+        )
+    }
+    if (style.getSource(ROUTE_SRC) == null) {
+        style.addSource(GeoJsonSource(ROUTE_SRC, """{"type":"FeatureCollection","features":[]}"""))
+    }
+    if (style.getLayer(ROUTE_LAYER) == null) {
+        style.addLayerAbove(
+            LineLayer(ROUTE_LAYER, ROUTE_SRC).withProperties(
+                PropertyFactory.lineColor("#1976D2"),
+                PropertyFactory.lineWidth(2.5f),
+                PropertyFactory.lineOpacity(0.85f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+            ),
+            LINE,
         )
     }
     if (style.getSource(FLAG_SRC) == null) {

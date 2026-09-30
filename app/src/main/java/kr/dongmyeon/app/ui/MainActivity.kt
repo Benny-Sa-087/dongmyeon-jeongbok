@@ -91,6 +91,10 @@ class MainActivity : ComponentActivity() {
                 val offlineMode by prefs.offlineMode.collectAsStateWithLifecycle()
                 val reminder by prefs.reminder.collectAsStateWithLifecycle()
                 val total by produceState<Int?>(null) { value = repo.regions().regions.size }
+                val sidoTotals by produceState<Map<String, Int>?>(null) {
+                    value = repo.regions().regions.groupingBy { it.sido }.eachCount()
+                }
+                val routePoints by repo.routePoints.collectAsStateWithLifecycle(initialValue = emptyList())
                 var tab by rememberSaveable { mutableIntStateOf(0) }
 
                 Scaffold(
@@ -109,9 +113,9 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         when (tab) {
-                            0 -> MapScreen(repo, achieved, total, offlineMode, photoCodes)
-                            1 -> RecordsScreen(repo, achieved, needsReview)
-                            2 -> VehicleScreen(trips, needsReview.size)
+                            0 -> MapScreen(repo, achieved, total, offlineMode, photoCodes, routePoints)
+                            1 -> RecordsScreen(repo, achieved, needsReview, total, sidoTotals)
+                            2 -> VehicleScreen(trips, needsReview.size, prefs)
                             else -> SettingsScreen(repo, running, live, prefs, offlineMode, reminder)
                         }
                     }

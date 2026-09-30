@@ -52,6 +52,29 @@ class AppPrefs(context: Context) {
         _reminder.value = schedule
     }
 
+    /**
+     * 정비 항목별 "마지막 점검 시점" 기준(그때까지의 누적 주행거리, 그때 시각).
+     * 처음 조회하는 항목이면 지금을 기준으로 새로 잡는다(과거 주행을 갑자기 "밀린 정비"로 잡지 않기 위해).
+     */
+    fun maintenanceBaseline(key: String, currentTotalDistanceMeters: Double): Pair<Double, Long> {
+        val distKey = "maint_${key}_dist"
+        val timeKey = "maint_${key}_time"
+        if (!prefs.contains(distKey)) {
+            val now = System.currentTimeMillis()
+            prefs.edit().putLong(distKey, currentTotalDistanceMeters.toRawBits()).putLong(timeKey, now).apply()
+            return currentTotalDistanceMeters to now
+        }
+        return Double.fromBits(prefs.getLong(distKey, 0L)) to prefs.getLong(timeKey, System.currentTimeMillis())
+    }
+
+    /** 정비 완료 체크: 이 시점(지금까지 주행거리·현재 시각)을 새 기준으로 삼는다. */
+    fun setMaintenanceBaseline(key: String, totalDistanceMeters: Double, timeMillis: Long) {
+        prefs.edit()
+            .putLong("maint_${key}_dist", totalDistanceMeters.toRawBits())
+            .putLong("maint_${key}_time", timeMillis)
+            .apply()
+    }
+
     companion object {
         private const val FILE = "app_prefs"
         private const val KEY_OFFLINE = "offline_map_mode"

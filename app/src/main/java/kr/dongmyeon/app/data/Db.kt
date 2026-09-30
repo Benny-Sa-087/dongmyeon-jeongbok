@@ -84,6 +84,15 @@ data class PhotoEntity(
     val takenAt: Long,
 )
 
+/** 이동 경로 표시용으로 남기는 유효 위치 점(지도에 선으로 그림) */
+@Entity(tableName = "route_points")
+data class RoutePointEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val lat: Double,
+    val lng: Double,
+    val timeMillis: Long,
+)
+
 @Dao
 abstract class VisitDao {
     @Query("SELECT * FROM achieved ORDER BY firstVisitedAt DESC")
@@ -177,6 +186,15 @@ abstract class VisitDao {
     @Query("DELETE FROM photos")
     abstract suspend fun clearPhotos()
 
+    @Insert
+    abstract suspend fun insertRoutePoint(point: RoutePointEntity)
+
+    @Query("SELECT * FROM route_points ORDER BY timeMillis")
+    abstract fun observeRoutePoints(): Flow<List<RoutePointEntity>>
+
+    @Query("DELETE FROM route_points")
+    abstract suspend fun clearRoutePoints()
+
     @Transaction
     open suspend fun saveStep(
         newAchieved: List<AchievedEntity>,
@@ -203,15 +221,16 @@ abstract class VisitDao {
     @Transaction
     open suspend fun clearAll() {
         clearAchieved(); clearHits(); clearLastPoint(); clearNeedsReview(); clearTrips(); clearPhotos()
+        clearRoutePoints()
     }
 }
 
 @Database(
     entities = [
         AchievedEntity::class, HitEntity::class, LastPointEntity::class,
-        NeedsReviewEntity::class, TripEntity::class, PhotoEntity::class,
+        NeedsReviewEntity::class, TripEntity::class, PhotoEntity::class, RoutePointEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

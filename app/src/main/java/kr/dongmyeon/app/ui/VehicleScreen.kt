@@ -2,18 +2,29 @@ package kr.dongmyeon.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kr.dongmyeon.app.data.AppPrefs
+import kr.dongmyeon.app.data.MAINTENANCE_ITEMS
 import kr.dongmyeon.app.data.TripEntity
+import kr.dongmyeon.app.data.isDue
 import java.time.Instant
 import java.time.ZoneId
 import java.time.YearMonth
@@ -26,8 +37,9 @@ private val DATE_FORMAT = DateTimeFormatter.ofPattern("M월 d일")
  * 매일 차를 몰아 출퇴근하는 차라 단순 운행 여부로는 오버랜딩 활용도를 알 수 없기 때문.
  */
 @Composable
-fun VehicleScreen(trips: List<TripEntity>, needsReviewCount: Int) {
+fun VehicleScreen(trips: List<TripEntity>, needsReviewCount: Int, prefs: AppPrefs) {
     val now = System.currentTimeMillis()
+    val totalDistance = trips.sumOf { it.distanceMeters }
     val lastTrip = trips.firstOrNull { it.isRoutine == false }
     val daysSince = lastTrip?.let { (now - it.startTime) / 86_400_000L }
     val thisMonth = YearMonth.now()
@@ -97,6 +109,52 @@ fun VehicleScreen(trips: List<TripEntity>, needsReviewCount: Int) {
                         "기록 탭에 확인이 필요한 지역 ${needsReviewCount}곳이 있습니다.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+            }
+        }
+
+        Text("정비 체크리스트", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
+        Text(
+            "요일별 고정 문구가 아니라 실제 누적 주행거리·경과일 기준으로 계산합니다.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        MAINTENANCE_ITEMS.forEach { item ->
+            var refreshTick by remember { mutableIntStateOf(0) }
+            val (baseDistance, baseTime) = remember(refreshTick, totalDistance) {
+                prefs.maintenanceBaseline(item.key, totalDistance)
+            }
+            val sinceKm = (totalDistance - baseDistance) / 1000.0
+            val sinceDays = (now - baseTime) / 86_400_000L
+            val due = item.isDue(sinceKm, sinceDays)
+
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = if (due) {
+                    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                } else {
+                    CardDefaults.cardColors()
+                },
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.label, style = MaterialTheme.typography.titleSmall)
+                        val detail = buildList {
+                            if (item.intervalKm != null) add("%.0fkm 주행 / 기준 %.0fkm".format(sinceKm, item.intervalKm))
+                            if (item.intervalDays != null) add("${sinceDays}일 경과 / 기준 ${item.intervalDays}일")
+                        }.joinToString(" · ")
+                        Text(detail, style = MaterialTheme.typography.bodySmall)
+                        if (due) {
+                            Text("점검 필요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    Button(onClick = {
+                        prefs.setMaintenanceBaseline(item.key, totalDistance, now)
+                        refreshTick++
+                    }) { Text("점검 완료") }
                 }
             }
         }

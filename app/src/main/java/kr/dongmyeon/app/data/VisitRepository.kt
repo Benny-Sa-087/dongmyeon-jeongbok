@@ -78,6 +78,7 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
     val achieved: Flow<List<AchievedEntity>> = dao.observeAchieved()
     val needsReview: Flow<List<NeedsReviewEntity>> = dao.observeNeedsReview()
     val trips: Flow<List<TripEntity>> = dao.observeTrips()
+    val routePoints: Flow<List<RoutePointEntity>> = dao.observeRoutePoints()
 
     /** 내장 경계 파일 로드(최초 1회) */
     suspend fun regions(): RegionIndex = mutex.withLock { loadIndexLocked() }
@@ -131,6 +132,7 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         sessionLastFix?.let { prev -> sessionDistance += Geo.distanceMeters(prev.lat, prev.lng, fix.lat, fix.lng) }
         sessionLastFix = fix
         sessionNewRegions += confirmed.size
+        dao.insertRoutePoint(RoutePointEntity(lat = fix.lat, lng = fix.lng, timeMillis = fix.timeMillis))
 
         val st = j.state
         dao.saveStep(
@@ -310,6 +312,9 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
     /** 가장 최근 "여행"(출퇴근이 아닌 구간)의 시작 시각. 대시보드용. */
     suspend fun lastTripAt(): Long? = dao.recentTrips(200).firstOrNull { it.isRoutine == false }?.startTime
 
+    /** 지금까지 기록된 모든 구간의 누적 주행거리(정비 체크리스트의 주행거리 기준용) */
+    suspend fun totalDistanceMeters(): Double = dao.recentTrips(Int.MAX_VALUE).sumOf { it.distanceMeters }
+
     /**
      * 달성 지역·여행 기록·사진 메타데이터를 JSON 문자열로 내보낸다.
      * 사진 원본 파일은 용량 문제로 JSON 안에 포함하지 않는다(경로만 기록). 그래서 기기를 바꾸거나
@@ -399,7 +404,10 @@ class VisitRepository(private val context: Context, private val db: AppDatabase)
         private const val MIN_SESSION_MS = 60_000L
         private const val MIN_BASELINE_TRIPS = 5
         private const val ROUTINE_SLACK = 1.6
-        /** 이만큼 새 위치가 안 들어오면 여행이 끝난 것으로 본다(주차 후 정지 상태로 간주). */
-        private const val TRIP_GAP_MS = 20 * 60_000L
+        /**
+         * 이만큼 새 위치가 안 들어오면 여행이 끝난 것으로 본다(주차 후 정지 상태로 간주).
+         * 지도의 이동 경로 선도 이 간격보다 크게 벌어진 두 점은 잇지 않는다(따로 저장된 구간).
+         */
+        const val TRIP_GAP_MS = 20 * 60_000L
     }
 }
