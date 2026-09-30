@@ -480,7 +480,7 @@ private fun addRegionLayers(context: Context, style: Style) {
         style.addLayer(
             SymbolLayer(FLAG_LAYER, FLAG_SRC).withProperties(
                 PropertyFactory.iconImage(FLAG_ICON),
-                PropertyFactory.iconSize(0.7f),
+                PropertyFactory.iconSize(0.9f),
                 PropertyFactory.iconAllowOverlap(true),
                 PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
             )
