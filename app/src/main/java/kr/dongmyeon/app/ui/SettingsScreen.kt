@@ -368,7 +368,13 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmClear = false
-                    scope.launch { repo.clearAll() }
+                    scope.launch {
+                        repo.clearAll()
+                        // 사진 자동 인식의 "어디까지 스캔했는지" 기록도 같이 초기화해야, 다시 스캔했을 때
+                        // 이미 확인한 사진으로 취급되어 건너뛰지 않고 처음부터 다시 인식한다.
+                        prefs.lastPhotoImportId = 0
+                        if (prefs.photoAutoImport.value) PhotoImportScheduler.scanNow(context)
+                    }
                 }) { Text("삭제") }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("취소") } },
