@@ -383,8 +383,8 @@ private fun RegionDetailCard(
         if (success && file != null) scope.launch { repo.commitPhoto(code, file) }
         pendingCameraFile = null
     }
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) scope.launch { repo.addPhotoFromUri(code, uri) }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isNotEmpty()) scope.launch { uris.forEach { repo.addPhotoFromUri(code, it) } }
     }
 
     Card(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
