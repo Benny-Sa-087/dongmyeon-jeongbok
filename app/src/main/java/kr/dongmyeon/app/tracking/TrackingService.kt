@@ -42,8 +42,20 @@ class TrackingService : LifecycleService() {
     private var updatesRequested = false
     private var achievedCount = 0
 
+    /**
+     * 거리 필터(minUpdateDistanceMeters)는 "앱에 콜백을 전달할지"만 걸러줄 뿐, GPS 칩 자체는
+     * 그 간격(FAST_INTERVAL_MS)마다 계속 깨어나 위치를 확인한다. 즉 차가 완전히 서 있어도 10초마다
+     * GPS를 계속 쓰는 셈이라 배터리 소모가 크다. 그래서 한동안 콜백이 전혀 없으면(=안 움직이는 중)
+     * 주기를 늘린 저전력 모드로 바꾸고, 다시 콜백이 오면(=움직이기 시작) 바로 빠른 모드로 되돌린다.
+     */
+    private enum class PollMode { FAST, SLOW }
+    private var pollMode = PollMode.FAST
+    private var lastCallbackAt = System.currentTimeMillis()
+
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
+            lastCallbackAt = System.currentTimeMillis()
+            if (pollMode == PollMode.SLOW) switchPollMode(PollMode.FAST)
             for (loc in result.locations) {
                 fixes.trySend(
                     Fix(
@@ -77,10 +89,14 @@ class TrackingService : LifecycleService() {
             }
         }
         // "여행"은 버튼이 아니라 움직임 공백으로 자동 마감된다. 1분마다 확인한다.
+        // 겸사겸사 같은 주기로 "한동안 안 움직였는지"도 봐서 저전력 모드로 전환한다.
         lifecycleScope.launch {
             while (isActive) {
                 delay(60_000)
                 repo.checkTripTimeout()
+                if (pollMode == PollMode.FAST && System.currentTimeMillis() - lastCallbackAt >= STATIONARY_SWITCH_MS) {
+                    switchPollMode(PollMode.SLOW)
+                }
             }
         }
     }
@@ -126,13 +142,28 @@ class TrackingService : LifecycleService() {
             stopTracking()
             return
         }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVAL_MS)
-            .setMinUpdateIntervalMillis(MIN_INTERVAL_MS)
+        pollMode = PollMode.FAST
+        lastCallbackAt = System.currentTimeMillis()
+        fused.requestLocationUpdates(buildRequest(PollMode.FAST), callback, Looper.getMainLooper())
+        updatesRequested = true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun switchPollMode(mode: PollMode) {
+        if (pollMode == mode || !updatesRequested) return
+        pollMode = mode
+        fused.removeLocationUpdates(callback)
+        fused.requestLocationUpdates(buildRequest(mode), callback, Looper.getMainLooper())
+    }
+
+    private fun buildRequest(mode: PollMode): LocationRequest {
+        val interval = if (mode == PollMode.FAST) INTERVAL_MS else SLOW_INTERVAL_MS
+        val minInterval = if (mode == PollMode.FAST) MIN_INTERVAL_MS else SLOW_MIN_INTERVAL_MS
+        return LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
+            .setMinUpdateIntervalMillis(minInterval)
             .setMinUpdateDistanceMeters(MIN_DISTANCE_M)
             .setWaitForAccurateLocation(false)
             .build()
-        fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
-        updatesRequested = true
     }
 
     private fun stopTracking() {
@@ -217,6 +248,11 @@ class TrackingService : LifecycleService() {
         private const val INTERVAL_MS = 10_000L
         private const val MIN_INTERVAL_MS = 5_000L
         private const val MIN_DISTANCE_M = 100f
+        /** 저전력 모드(정차 중으로 판단될 때)의 GPS 확인 주기 */
+        private const val SLOW_INTERVAL_MS = 5 * 60_000L
+        private const val SLOW_MIN_INTERVAL_MS = 4 * 60_000L
+        /** 이만큼 위치 콜백이 전혀 없으면(=안 움직이는 중) 저전력 모드로 전환 */
+        private const val STATIONARY_SWITCH_MS = 10 * 60_000L
         private const val PREFS = "tracking"
         private const val KEY_RECORDING = "recording"
 
