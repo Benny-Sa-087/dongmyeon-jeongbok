@@ -45,8 +45,13 @@ class TrackingService : LifecycleService() {
     /**
      * 거리 필터(minUpdateDistanceMeters)는 "앱에 콜백을 전달할지"만 걸러줄 뿐, GPS 칩 자체는
      * 그 간격(FAST_INTERVAL_MS)마다 계속 깨어나 위치를 확인한다. 즉 차가 완전히 서 있어도 10초마다
-     * GPS를 계속 쓰는 셈이라 배터리 소모가 크다. 그래서 한동안 콜백이 전혀 없으면(=안 움직이는 중)
-     * 주기를 늘린 저전력 모드로 바꾸고, 다시 콜백이 오면(=움직이기 시작) 바로 빠른 모드로 되돌린다.
+     * GPS를 계속 쓰는 셈이라 배터리 소모가 크다. 그래서 한동안 "믿을 만한" 콜백이 전혀 없으면
+     * (=안 움직이는 중) 주기를 늘린 저전력 모드로 바꾸고, 다시 오면(=움직이기 시작) 빠른 모드로 되돌린다.
+     *
+     * 정확도가 나쁜 콜백은 움직임 신호로 치지 않는다. 실내(사무실 등)에서는 GPS 신호가 벽에 반사되며
+     * 튀어서(멀티패스), 실제로는 가만히 있어도 수백m 이동한 것처럼 잘못 잡히는 경우가 흔하다. 그런 값까지
+     * "움직였다"로 인정하면 하루 종일 책상에 앉아 있어도 저전력 모드로 안 내려가 버린다. 판정 로직
+     * (VisitJudge)이 쓰는 것과 같은 정확도 기준(50m)을 그대로 써서, 신뢰할 수 있는 움직임만 반영한다.
      */
     private enum class PollMode { FAST, SLOW }
     private var pollMode = PollMode.FAST
@@ -54,8 +59,6 @@ class TrackingService : LifecycleService() {
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            lastCallbackAt = System.currentTimeMillis()
-            if (pollMode == PollMode.SLOW) switchPollMode(PollMode.FAST)
             for (loc in result.locations) {
                 fixes.trySend(
                     Fix(
@@ -65,6 +68,10 @@ class TrackingService : LifecycleService() {
                         timeMillis = loc.time,
                     )
                 )
+            }
+            if (result.locations.any { it.hasAccuracy() && it.accuracy <= RELIABLE_ACCURACY_M }) {
+                lastCallbackAt = System.currentTimeMillis()
+                if (pollMode == PollMode.SLOW) switchPollMode(PollMode.FAST)
             }
         }
     }
@@ -248,6 +255,8 @@ class TrackingService : LifecycleService() {
         private const val INTERVAL_MS = 10_000L
         private const val MIN_INTERVAL_MS = 5_000L
         private const val MIN_DISTANCE_M = 100f
+        /** VisitJudge 기본 정확도 기준과 동일. 이보다 부정확한 콜백은 움직임 신호로 안 친다. */
+        private const val RELIABLE_ACCURACY_M = 50f
         /** 저전력 모드(정차 중으로 판단될 때)의 GPS 확인 주기 */
         private const val SLOW_INTERVAL_MS = 5 * 60_000L
         private const val SLOW_MIN_INTERVAL_MS = 4 * 60_000L
